@@ -34,7 +34,7 @@ tshape := []Point{{0, 0}, {1, 0}, {2, 0}, {1, 1}}
 shapes := [][]Point{square, line, snake1, snake2, lshape1, lshape2, tshape}
 
 make_piece :: proc(bag: ^[dynamic][]Point) -> Piece {
-  color := rand.choice([]rl.Color{rl.RED, rl.GREEN, rl.BLUE, rl.YELLOW, rl.MAGENTA})
+  color := rand.choice([]rl.Color{rl.RED, rl.GREEN, rl.BLUE, rl.YELLOW, rl.MAGENTA, rl.ORANGE, rl.LIME, rl.PURPLE, rl.SKYBLUE, rl.VIOLET})
   if len(bag) == 0 {
     delete(bag^)
     bag^ = generate_bag()
@@ -68,18 +68,14 @@ render_field :: proc(f: Field) {
 
 render_piece :: proc(p: Piece) {
   tile_size := 40
-  for segment in p.segments {
-    rl.DrawRectangle(i32(segment.x * tile_size), i32(segment.y * tile_size), i32(tile_size), i32(tile_size), p.color)
-  }
+  for segment in p.segments do rl.DrawRectangle(i32(segment.x * tile_size), i32(segment.y * tile_size), i32(tile_size), i32(tile_size), p.color)
 }
 
 render_preview_piece :: proc(p: Piece) {
   tile_size := 40
   color := p.color
   color.a = 100
-  for segment in p.segments {
-    rl.DrawRectangle(i32(segment.x * tile_size), i32(segment.y * tile_size), i32(tile_size), i32(tile_size), color)
-  }
+  for segment in p.segments do rl.DrawRectangle(i32(segment.x * tile_size), i32(segment.y * tile_size), i32(tile_size), i32(tile_size), color)
 }
 
 drop_piece :: proc(p: ^Piece, f: Field) -> (res: bool) {
@@ -99,9 +95,7 @@ drop_piece :: proc(p: ^Piece, f: Field) -> (res: bool) {
 }
 
 cement_piece :: proc(f: ^Field, p: Piece) {
-  for segment in p.segments {
-    f.data[segment.y * f.width + segment.x] = Tile{true, p.color}
-  }
+  for segment in p.segments do f.data[segment.y * f.width + segment.x] = Tile{true, p.color}
   delete(p.segments)
 }
 
@@ -118,11 +112,7 @@ shift_piece :: proc(p: ^Piece, d: Dir, f: Field) {
   old_segments := make([dynamic]Point, len(p.segments), context.temp_allocator)
   copy(old_segments[:], p.segments[:])
   for &segment in p.segments {
-    if d == .LEFT {
-      segment.x -= 1
-    } else {
-      segment.x += 1
-    }
+    segment.x += -1 if d == .LEFT else 1
     // if segment.x < 0 do segment.x = f.width + segment.x
     // segment.x %= f.width
     if segment.x < 0 || segment.x >= f.width || f.data[segment.y * f.width + segment.x].filled {
@@ -181,15 +171,9 @@ rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
   offset_piece(p, min)
   min_o := min_offset(p^)
   max_o := max_offset(p^)
-  if min_o.x < 0 {
-    offset_piece(p, {-min_o.x, 0})
-  }
-  if max_o.x >= f.width {
-    offset_piece(p, {f.width - max_o.x - 1, 0})
-  }
-  if max_o.y >= f.height {
-    offset_piece(p, {0, f.height - max_o.y - 1})
-  }
+  if min_o.x < 0 do offset_piece(p, {-min_o.x, 0})
+  if max_o.x >= f.width do offset_piece(p, {f.width - max_o.x - 1, 0})
+  if max_o.y >= f.height do offset_piece(p, {0, f.height - max_o.y - 1})
   if check_collision(p^, f) {
     for x in -1 ..= 1 {
       for y in -1 ..= 1 {
@@ -205,9 +189,13 @@ rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
 }
 
 Action :: enum {
+  MOVE_LEFT,
+  MOVE_RIGHT,
+  MOVE_LEFT_CONT,
+  MOVE_RIGHT_CONT,
   SOFT_DROP,
   ROT_CW,
-  ROT_CC,
+  ROT_CCW,
   HARD_DROP,
   POCKET_SWAP,
   PAUSE,
@@ -215,11 +203,13 @@ Action :: enum {
 ActionSet :: bit_set[Action]
 
 handle_input :: proc(p: ^Piece, f: Field) -> (res: ActionSet) {
-  if rl.IsKeyPressed(.A) || rl.IsKeyPressed(.LEFT) do shift_piece(p, .LEFT, f)
-  if rl.IsKeyPressed(.D) || rl.IsKeyPressed(.RIGHT) do shift_piece(p, .RIGHT, f)
+  if rl.IsKeyPressed(.A) || rl.IsKeyPressed(.LEFT) do res |= {.MOVE_LEFT}
+  if rl.IsKeyPressed(.D) || rl.IsKeyPressed(.RIGHT) do res |= {.MOVE_RIGHT}
+  if rl.IsKeyDown(.A) || rl.IsKeyDown(.LEFT) do res |= {.MOVE_LEFT_CONT}
+  if rl.IsKeyDown(.D) || rl.IsKeyDown(.RIGHT) do res |= {.MOVE_RIGHT_CONT}
   if rl.IsKeyDown(.S) || rl.IsKeyDown(.DOWN) do res |= {.SOFT_DROP}
   if rl.IsKeyPressed(.SPACE) do res |= {.HARD_DROP}
-  if rl.IsKeyPressed(.W) || rl.IsKeyPressed(.UP) do res |= {.ROT_CC} if rl.IsKeyPressed(.LEFT_SHIFT) else {.ROT_CW}
+  if rl.IsKeyPressed(.W) || rl.IsKeyPressed(.UP) do res |= {.ROT_CCW} if rl.IsKeyPressed(.LEFT_SHIFT) else {.ROT_CW}
   if rl.IsKeyPressed(.Q) do res |= {.POCKET_SWAP}
   if rl.IsKeyPressed(.P) do res |= {.PAUSE}
   return
@@ -249,11 +239,7 @@ render_score :: proc(s: int) {
 render_queue :: proc(qs: [3]Piece, f: Field) {
   tile_size := 40
   width := f.width
-  for q, idx in qs {
-    for s in q.segments {
-      rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(tile_size + s.y * tile_size + idx * 4 * tile_size), auto_cast tile_size, auto_cast tile_size, q.color)
-    }
-  }
+  for q, idx in qs do for s in q.segments do rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(tile_size + s.y * tile_size + idx * 4 * tile_size), auto_cast tile_size, auto_cast tile_size, q.color)
 }
 
 render_pocket :: proc(p: Piece, f: Field) {
@@ -263,9 +249,7 @@ render_pocket :: proc(p: Piece, f: Field) {
   width := f.width
   min_off := min_offset(pocket)
   offset_piece(&pocket, -min_off)
-  for s in pocket.segments {
-    rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(tile_size + s.y * tile_size + 12 * tile_size), auto_cast tile_size, auto_cast tile_size, pocket.color)
-  }
+  for s in pocket.segments do rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(tile_size + s.y * tile_size + 12 * tile_size), auto_cast tile_size, auto_cast tile_size, pocket.color)
 }
 
 copy_piece :: proc(p: Piece) -> Piece {
@@ -277,9 +261,7 @@ copy_piece :: proc(p: Piece) -> Piece {
 
 generate_bag :: proc() -> [dynamic][]Point {
   bag := make([dynamic][]Point, len(shapes) * 1024)
-  for i in 0 ..< 1024 {
-    copy(bag[i * len(shapes):], shapes[:])
-  }
+  for i in 0 ..< 1024 do copy(bag[i * len(shapes):], shapes[:])
   rand.shuffle(bag[:])
   return bag
 }
@@ -311,25 +293,31 @@ main :: proc() {
     piece_queue[i].segments = make([dynamic]Point, len(bag[len(bag) - 1 - i]))
     copy(piece_queue[i].segments[:], bag[len(bag) - 1 - i])
   }
-  defer for i in 0 ..< 3 {
-    delete(piece_queue[i].segments)
-  }
+  defer for i in 0 ..< 3 do delete(piece_queue[i].segments)
   speed := 0
   piece_counter := 0
   pause := false
+  move_counter := 0
   for !rl.WindowShouldClose() {
     defer free_all(context.temp_allocator)
-    defer if !pause do frame_counter += 1
+    defer if !pause {
+      frame_counter += 1
+      move_counter += 1
+    }
     actions := handle_input(&piece, field)
-    if .SOFT_DROP in actions {
-      fast = true
+    if .MOVE_LEFT in actions {
+      shift_piece(&piece, .LEFT, field)
+      move_counter = 0
     }
-    if .ROT_CC in actions {
-      rotate_piece(&piece, .LEFT, field)
+    if .MOVE_RIGHT in actions {
+      shift_piece(&piece, .RIGHT, field)
+      move_counter = 0
     }
-    if .ROT_CW in actions {
-      rotate_piece(&piece, .RIGHT, field)
-    }
+    if .MOVE_LEFT not_in actions && .MOVE_LEFT_CONT in actions do if move_counter > FPS / 3 && frame_counter % 6 == 0 do shift_piece(&piece, .LEFT, field)
+    if .MOVE_RIGHT not_in actions && .MOVE_RIGHT_CONT in actions do if move_counter > FPS / 3 && frame_counter % 6 == 0 do shift_piece(&piece, .RIGHT, field)
+    if .SOFT_DROP in actions do fast = true
+    if .ROT_CCW in actions do rotate_piece(&piece, .LEFT, field)
+    if .ROT_CW in actions do rotate_piece(&piece, .RIGHT, field)
     if .HARD_DROP in actions {
       for drop_piece(&piece, field) {}
       frame_counter = 1
@@ -343,9 +331,7 @@ main :: proc() {
         slice.swap_between(pocket.segments[:], piece.segments[:])
       }
     }
-    if .PAUSE in actions {
-      pause = !pause
-    }
+    if .PAUSE in actions do pause = !pause
     if frame_counter % (FPS - speed) == 0 || (fast && frame_counter % ((FPS - speed) / acceleration) == 0) {
       if fast do acceleration = min(acceleration + 1, 15)
       fast = false
@@ -358,9 +344,7 @@ main :: proc() {
           resize(&piece_queue[i].segments, len(bag[len(bag) - 1 - i]))
           copy(piece_queue[i].segments[:], bag[len(bag) - 1 - i])
         }
-        if piece_counter % 10 == 0 {
-          speed += 1
-        }
+        if piece_counter % 10 == 0 do speed += 1
       }
     }
     preview_piece = copy_piece(piece)
@@ -380,6 +364,14 @@ main :: proc() {
     render_score(score)
     render_queue(piece_queue, field)
     render_pocket(pocket, field)
+    if pause {
+      w := rl.GetScreenWidth()
+      h := rl.GetScreenHeight()
+      text := fmt.ctprint("PAUSE")
+      l := rl.MeasureText(text, 40)
+      rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - 20 - 1, 40, rl.WHITE)
+      rl.DrawText(text, w / 2 - l / 2, h / 2 - 20, 40, rl.BLACK)
+    }
     rl.EndDrawing()
   }
 }
