@@ -61,6 +61,15 @@ render_piece :: proc(p: Piece) {
   }
 }
 
+render_preview_piece :: proc(p: Piece) {
+  tile_size := 40
+  color := p.color
+  color.a = 100
+  for segment in p.segments {
+    rl.DrawRectangle(i32(segment.x * tile_size), i32(segment.y * tile_size), i32(tile_size), i32(tile_size), color)
+  }
+}
+
 drop_piece :: proc(p: ^Piece, f: Field) -> (res: bool) {
   old_segments := make([dynamic][2]int, len(p.segments), context.temp_allocator)
   copy(old_segments[:], p.segments[:])
@@ -104,7 +113,7 @@ shift_piece :: proc(p: ^Piece, d: Dir, f: Field) {
     }
     // if segment.x < 0 do segment.x = f.width + segment.x
     // segment.x %= f.width
-    if segment.x < 0 || segment.x >= f.width {
+    if segment.x < 0 || segment.x >= f.width || f.data[segment.y * f.width + segment.x].filled {
       fmt.eprintln("TOO FAR")
       copy(p.segments[:], old_segments[:])
       return
@@ -167,7 +176,7 @@ rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
     offset_piece(p, {-min_o.x, 0})
   }
   if max_o.x >= f.width {
-    offset_piece(p, {f.width - max_o.x, 0})
+    offset_piece(p, {f.width - max_o.x - 1, 0})
   }
 }
 
@@ -190,7 +199,7 @@ handle_input :: proc(p: ^Piece, f: Field) -> (res: ActionSet) {
 
 bedris :: proc(f: ^Field) -> int {
   lines := 0
-  for i := f.height - 1; i >= 0; i -= 1 {
+  for i := f.height - 1; i > 0; i -= 1 {
     if slice.all_of_proc(f.data[i * f.width:][:f.width], proc(v: Tile) -> bool {return v.filled}) {
       copy(f.data[f.width:], f.data[:len(f.data) - (f.height - i) * f.width])
       slice.fill(f.data[:f.width], Tile{false, rl.BLANK})
@@ -198,6 +207,7 @@ bedris :: proc(f: ^Field) -> int {
       lines += 1
     }
   }
+  if slice.any_of_proc(f.data[:f.width], proc(v: Tile) -> bool {return v.filled}) do return -1
   return lines
 }
 
@@ -206,6 +216,13 @@ render_score :: proc(s: int) {
   text := fmt.ctprint(s)
   l := rl.MeasureText(text, 20)
   rl.DrawText(text, w - l - 10, 10, 20, rl.LIGHTGRAY)
+}
+
+copy_piece :: proc(p: Piece) -> Piece {
+  new_p := p
+  new_p.segments = make([dynamic][2]int, len(p.segments))
+  copy(new_p.segments[:], p.segments[:])
+  return new_p
 }
 
 main :: proc() {
@@ -219,6 +236,7 @@ main :: proc() {
   defer rl.CloseWindow()
   field := make_field(FIELD_WIDTH, FIELD_HEIGHT)
   piece := make_piece()
+  preview_piece := copy_piece(piece)
   frame_counter := 0
   speed := false
   acceleration := 2
@@ -249,12 +267,19 @@ main :: proc() {
         piece = make_piece()
       }
     }
+    preview_piece = copy_piece(piece)
+    for drop_piece(&preview_piece, field) {}
     lines := bedris(&field)
+    if lines == -1 {
+      score = 0
+      field = make_field(FIELD_WIDTH, FIELD_HEIGHT)
+    }
     if lines > 0 do score += 10 * lines + (lines - 1) * (lines - 1) * 5
     rl.ClearBackground(rl.GRAY)
     rl.BeginDrawing()
     render_field(field)
     render_piece(piece)
+    render_preview_piece(preview_piece)
     render_score(score)
     rl.EndDrawing()
   }
