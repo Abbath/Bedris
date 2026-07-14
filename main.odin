@@ -19,27 +19,39 @@ Field :: struct {
 
 Piece :: struct {
   color:    rl.Color,
-  segments: [dynamic][2]int,
+  segments: [dynamic]Point,
 }
 
-square := [][2]int{{0, 0}, {0, 1}, {1, 0}, {1, 1}}
-line := [][2]int{{0, 0}, {1, 0}, {2, 0}, {3, 0}}
-snake1 := [][2]int{{0, 0}, {1, 0}, {1, 1}, {2, 1}}
-snake2 := [][2]int{{0, 1}, {1, 1}, {1, 0}, {2, 0}}
-lshape1 := [][2]int{{0, 0}, {1, 0}, {2, 0}, {2, 1}}
-lshape2 := [][2]int{{0, 0}, {1, 0}, {2, 0}, {0, 1}}
-tshape := [][2]int{{0, 0}, {1, 0}, {2, 0}, {1, 1}}
+Point :: distinct [2]int
 
-make_piece :: proc() -> Piece {
+square := []Point{{0, 0}, {0, 1}, {1, 0}, {1, 1}}
+line := []Point{{0, 0}, {1, 0}, {2, 0}, {3, 0}}
+snake1 := []Point{{0, 0}, {1, 0}, {1, 1}, {2, 1}}
+snake2 := []Point{{0, 1}, {1, 1}, {1, 0}, {2, 0}}
+lshape1 := []Point{{0, 0}, {1, 0}, {2, 0}, {2, 1}}
+lshape2 := []Point{{0, 0}, {1, 0}, {2, 0}, {0, 1}}
+tshape := []Point{{0, 0}, {1, 0}, {2, 0}, {1, 1}}
+shapes := [][]Point{square, line, snake1, snake2, lshape1, lshape2, tshape}
+
+make_piece :: proc(bag: ^[dynamic][]Point) -> Piece {
   color := rand.choice([]rl.Color{rl.RED, rl.GREEN, rl.BLUE, rl.YELLOW, rl.MAGENTA})
-  shape := rand.choice([][][2]int{square, line, snake1, snake2, lshape1, lshape2, tshape})
-  p := Piece{color, make([dynamic][2]int, len(shape))}
+  if len(bag) == 0 {
+    delete(bag^)
+    bag^ = generate_bag()
+  }
+  shape := pop(bag)
+  p := Piece{color, make([dynamic]Point, len(shape))}
   copy(p.segments[:], shape[:])
+  offset_piece(&p, {FIELD_WIDTH / 2 - 1, 0})
   return p
 }
 
 make_field :: proc(w, h: int) -> Field {
   return Field{w, h, make([dynamic]Tile, w * h)}
+}
+
+delete_field :: proc(f: Field) {
+  delete(f.data)
 }
 
 render_field :: proc(f: Field) {
@@ -71,7 +83,7 @@ render_preview_piece :: proc(p: Piece) {
 }
 
 drop_piece :: proc(p: ^Piece, f: Field) -> (res: bool) {
-  old_segments := make([dynamic][2]int, len(p.segments), context.temp_allocator)
+  old_segments := make([dynamic]Point, len(p.segments), context.temp_allocator)
   copy(old_segments[:], p.segments[:])
   for &segment in p.segments {
     if segment.y + 1 < FIELD_HEIGHT && !f.data[(segment.y + 1) * f.width + segment.x].filled {
@@ -103,7 +115,7 @@ Dir :: enum {
 }
 
 shift_piece :: proc(p: ^Piece, d: Dir, f: Field) {
-  old_segments := make([dynamic][2]int, len(p.segments), context.temp_allocator)
+  old_segments := make([dynamic]Point, len(p.segments), context.temp_allocator)
   copy(old_segments[:], p.segments[:])
   for &segment in p.segments {
     if d == .LEFT {
@@ -121,8 +133,8 @@ shift_piece :: proc(p: ^Piece, d: Dir, f: Field) {
   }
 }
 
-min_offset :: proc(p: Piece) -> [2]int {
-  min := [2]int{max(int), max(int)}
+min_offset :: proc(p: Piece) -> Point {
+  min := Point{max(int), max(int)}
   for segment in p.segments {
     if segment.x < min.x do min.x = segment.x
     if segment.y < min.y do min.y = segment.y
@@ -130,8 +142,8 @@ min_offset :: proc(p: Piece) -> [2]int {
   return min
 }
 
-max_offset :: proc(p: Piece) -> [2]int {
-  max := [2]int{min(int), min(int)}
+max_offset :: proc(p: Piece) -> Point {
+  max := Point{min(int), min(int)}
   for segment in p.segments {
     if segment.x > max.x do max.x = segment.x
     if segment.y > max.y do max.y = segment.y
@@ -139,12 +151,12 @@ max_offset :: proc(p: Piece) -> [2]int {
   return max
 }
 
-offset_piece :: proc(p: ^Piece, offset: [2]int) {
+offset_piece :: proc(p: ^Piece, offset: Point) {
   for &segment in p.segments do segment += offset
 }
 
 rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
-  old_segments := make([dynamic][2]int, len(p.segments), context.temp_allocator)
+  old_segments := make([dynamic]Point, len(p.segments), context.temp_allocator)
   copy(old_segments[:], p.segments[:])
   min := min_offset(p^)
   for &segment in p.segments {
@@ -185,6 +197,7 @@ Action :: enum {
   ROT_CW,
   ROT_CC,
   HARD_DROP,
+  POCKET_SWAP,
 }
 ActionSet :: bit_set[Action]
 
@@ -194,6 +207,7 @@ handle_input :: proc(p: ^Piece, f: Field) -> (res: ActionSet) {
   if rl.IsKeyDown(.S) || rl.IsKeyDown(.DOWN) do res |= {.SOFT_DROP}
   if rl.IsKeyPressed(.SPACE) do res |= {.HARD_DROP}
   if rl.IsKeyPressed(.W) || rl.IsKeyPressed(.UP) do res |= {.ROT_CC} if rl.IsKeyPressed(.LEFT_SHIFT) else {.ROT_CW}
+  if rl.IsKeyPressed(.Q) do res |= {.POCKET_SWAP}
   return
 }
 
@@ -218,29 +232,64 @@ render_score :: proc(s: int) {
   rl.DrawText(text, w - l - 10, 10, 20, rl.LIGHTGRAY)
 }
 
+render_queue :: proc(qs: [3]Piece, f: Field) {
+  tile_size := 40
+  width := f.width
+  for q, idx in qs {
+    // min_off := min_offset(q)
+    // offset_piece(&q, -min_off)
+    for s in q.segments {
+      rl.DrawRectangle(i32((width + 1) * tile_size + s.x * tile_size), i32(tile_size + s.y * tile_size + idx * 4 * tile_size), auto_cast tile_size, auto_cast tile_size, q.color)
+    }
+  }
+}
+
 copy_piece :: proc(p: Piece) -> Piece {
   new_p := p
-  new_p.segments = make([dynamic][2]int, len(p.segments))
+  new_p.segments = make([dynamic]Point, len(p.segments), context.temp_allocator)
   copy(new_p.segments[:], p.segments[:])
   return new_p
 }
 
+generate_bag :: proc() -> [dynamic][]Point {
+  bag := make([dynamic][]Point, len(shapes) * 1024)
+  for i in 0 ..< 1024 {
+    copy(bag[i * len(shapes):], shapes[:])
+  }
+  rand.shuffle(bag[:])
+  return bag
+}
+
 main :: proc() {
   when ODIN_DEBUG {
-    context = debug_stuff_init()
+    context.allocator = debug_stuff_init()
     defer debug_stuff_defer()
   }
-  fmt.println("FUCK")
   rl.SetTargetFPS(FPS)
   rl.InitWindow(600, 800, "BEDRIS")
   defer rl.CloseWindow()
+  bag := generate_bag()
+  defer delete(bag)
   field := make_field(FIELD_WIDTH, FIELD_HEIGHT)
-  piece := make_piece()
+  defer delete_field(field)
+  piece := make_piece(&bag)
+  defer delete(piece.segments)
   preview_piece := copy_piece(piece)
-  frame_counter := 0
+  frame_counter := 1
   speed := false
   acceleration := 2
   score := 0
+  piece_queue: [3]Piece
+  pocket := Piece{rl.GRAY, {}}
+  defer delete(pocket.segments)
+  for i in 0 ..< 3 {
+    piece_queue[i].color = rl.RAYWHITE
+    piece_queue[i].segments = make([dynamic]Point, len(bag[len(bag) - 1 - i]))
+    copy(piece_queue[i].segments[:], bag[len(bag) - 1 - i])
+  }
+  defer for i in 0 ..< 3 {
+    delete(piece_queue[i].segments)
+  }
   for !rl.WindowShouldClose() {
     defer free_all(context.temp_allocator)
     defer frame_counter += 1
@@ -258,13 +307,25 @@ main :: proc() {
       for drop_piece(&piece, field) {}
       frame_counter = 1
     }
+    if .POCKET_SWAP in actions {
+      if pocket.color == rl.GRAY {
+        pocket = copy_piece(piece)
+      } else {
+        pocket.color, piece.color = piece.color, pocket.color
+        slice.swap_between(pocket.segments[:], piece.segments[:])
+      }
+    }
     if frame_counter % FPS == 0 || (speed && frame_counter % (FPS / acceleration) == 0) {
       if speed do acceleration = min(acceleration + 1, 10)
       speed = false
       dropped := drop_piece(&piece, field)
       if !dropped {
         cement_piece(&field, piece)
-        piece = make_piece()
+        piece = make_piece(&bag)
+        for i in 0 ..< 3 {
+          resize(&piece_queue[i].segments, len(bag[len(bag) - 1 - i]))
+          copy(piece_queue[i].segments[:], bag[len(bag) - 1 - i])
+        }
       }
     }
     preview_piece = copy_piece(piece)
@@ -272,6 +333,7 @@ main :: proc() {
     lines := bedris(&field)
     if lines == -1 {
       score = 0
+      delete_field(field)
       field = make_field(FIELD_WIDTH, FIELD_HEIGHT)
     }
     if lines > 0 do score += 10 * lines + (lines - 1) * (lines - 1) * 5
@@ -281,6 +343,7 @@ main :: proc() {
     render_piece(piece)
     render_preview_piece(preview_piece)
     render_score(score)
+    render_queue(piece_queue, field)
     rl.EndDrawing()
   }
 }
