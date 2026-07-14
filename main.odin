@@ -190,6 +190,9 @@ rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
   if max_o.x >= f.width {
     offset_piece(p, {f.width - max_o.x - 1, 0})
   }
+  if max_o.y >= f.height {
+    offset_piece(p, {0, f.height - max_o.y - 1})
+  }
 }
 
 Action :: enum {
