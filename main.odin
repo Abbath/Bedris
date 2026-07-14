@@ -61,7 +61,7 @@ render_field :: proc(f: Field) {
       rect := rl.Rectangle{f32(j * tile_size), f32(i * tile_size), auto_cast tile_size, auto_cast tile_size}
       color := f.data[i * f.width + j].color
       rl.DrawRectangleRec(rect, color)
-      rl.DrawRectangleLinesEx(rect, 2, rl.LIGHTGRAY)
+      rl.DrawRectangleLinesEx(rect, 1, rl.LIGHTGRAY)
     }
   }
 }
@@ -126,7 +126,6 @@ shift_piece :: proc(p: ^Piece, d: Dir, f: Field) {
     // if segment.x < 0 do segment.x = f.width + segment.x
     // segment.x %= f.width
     if segment.x < 0 || segment.x >= f.width || f.data[segment.y * f.width + segment.x].filled {
-      fmt.eprintln("TOO FAR")
       copy(p.segments[:], old_segments[:])
       return
     }
@@ -155,6 +154,11 @@ offset_piece :: proc(p: ^Piece, offset: Point) {
   for &segment in p.segments do segment += offset
 }
 
+check_collision :: proc(p: Piece, f: Field) -> bool {
+  for segment in p.segments do if f.data[segment.y * f.width + segment.x].filled do return true
+  return false
+}
+
 rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
   old_segments := make([dynamic]Point, len(p.segments), context.temp_allocator)
   copy(old_segments[:], p.segments[:])
@@ -171,13 +175,6 @@ rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
             -1, 0,
           }
     }
-    // if segment.x < 0 do segment.x = f.width + segment.x
-    // segment.x %= f.width
-    // if segment.x < 0 || segment.x >= f.width || segment.y >= f.height {
-    //   fmt.eprintln("ROTATED WRONG")
-    //   copy(p.segments[:], old_segments[:])
-    //   return
-    // }
   }
   new_min_offset := min_offset(p^)
   offset_piece(p, -new_min_offset)
@@ -193,6 +190,18 @@ rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
   if max_o.y >= f.height {
     offset_piece(p, {0, f.height - max_o.y - 1})
   }
+  if check_collision(p^, f) {
+    for x in -1 ..= 1 {
+      for y in -1 ..= 1 {
+        if x != 0 && y != 0 {
+          offset_piece(p, {x, y})
+          if !check_collision(p^, f) do return
+          offset_piece(p, -{x, y})
+        }
+      }
+    }
+    copy(p.segments[:], old_segments[:])
+  }
 }
 
 Action :: enum {
@@ -201,6 +210,7 @@ Action :: enum {
   ROT_CC,
   HARD_DROP,
   POCKET_SWAP,
+  PAUSE,
 }
 ActionSet :: bit_set[Action]
 
@@ -211,6 +221,7 @@ handle_input :: proc(p: ^Piece, f: Field) -> (res: ActionSet) {
   if rl.IsKeyPressed(.SPACE) do res |= {.HARD_DROP}
   if rl.IsKeyPressed(.W) || rl.IsKeyPressed(.UP) do res |= {.ROT_CC} if rl.IsKeyPressed(.LEFT_SHIFT) else {.ROT_CW}
   if rl.IsKeyPressed(.Q) do res |= {.POCKET_SWAP}
+  if rl.IsKeyPressed(.P) do res |= {.PAUSE}
   return
 }
 
@@ -289,7 +300,7 @@ main :: proc() {
   defer delete(piece.segments)
   preview_piece := copy_piece(piece)
   frame_counter := 1
-  speed := false
+  fast := false
   acceleration := 2
   score := 0
   piece_queue: [3]Piece
@@ -303,12 +314,15 @@ main :: proc() {
   defer for i in 0 ..< 3 {
     delete(piece_queue[i].segments)
   }
+  speed := 0
+  piece_counter := 0
+  pause := false
   for !rl.WindowShouldClose() {
     defer free_all(context.temp_allocator)
-    defer frame_counter += 1
+    defer if !pause do frame_counter += 1
     actions := handle_input(&piece, field)
     if .SOFT_DROP in actions {
-      speed = true
+      fast = true
     }
     if .ROT_CC in actions {
       rotate_piece(&piece, .LEFT, field)
@@ -329,16 +343,23 @@ main :: proc() {
         slice.swap_between(pocket.segments[:], piece.segments[:])
       }
     }
-    if frame_counter % FPS == 0 || (speed && frame_counter % (FPS / acceleration) == 0) {
-      if speed do acceleration = min(acceleration + 1, 10)
-      speed = false
+    if .PAUSE in actions {
+      pause = !pause
+    }
+    if frame_counter % (FPS - speed) == 0 || (fast && frame_counter % ((FPS - speed) / acceleration) == 0) {
+      if fast do acceleration = min(acceleration + 1, 15)
+      fast = false
       dropped := drop_piece(&piece, field)
       if !dropped {
         cement_piece(&field, piece)
         piece = make_piece(&bag)
+        piece_counter += 1
         for i in 0 ..< 3 {
           resize(&piece_queue[i].segments, len(bag[len(bag) - 1 - i]))
           copy(piece_queue[i].segments[:], bag[len(bag) - 1 - i])
+        }
+        if piece_counter % 10 == 0 {
+          speed += 1
         }
       }
     }
