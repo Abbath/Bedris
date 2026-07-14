@@ -27,11 +27,11 @@ line := [][2]int{{0, 0}, {1, 0}, {2, 0}, {3, 0}}
 snake1 := [][2]int{{0, 0}, {1, 0}, {1, 1}, {2, 1}}
 snake2 := [][2]int{{0, 1}, {1, 1}, {1, 0}, {2, 0}}
 lshape1 := [][2]int{{0, 0}, {1, 0}, {2, 0}, {2, 1}}
-lshape2 := [][2]int{{0, 0}, {0, 1}, {1, 1}, {2, 1}}
+lshape2 := [][2]int{{0, 0}, {1, 0}, {2, 0}, {0, 1}}
 tshape := [][2]int{{0, 0}, {1, 0}, {2, 0}, {1, 1}}
 
 make_piece :: proc() -> Piece {
-  color := rand.choice([]rl.Color{rl.RED, rl.GREEN, rl.BLUE})
+  color := rand.choice([]rl.Color{rl.RED, rl.GREEN, rl.BLUE, rl.YELLOW, rl.MAGENTA})
   shape := rand.choice([][][2]int{square, line, snake1, snake2, lshape1, lshape2, tshape})
   p := Piece{color, make([dynamic][2]int, len(shape))}
   copy(p.segments[:], shape[:])
@@ -102,13 +102,13 @@ shift_piece :: proc(p: ^Piece, d: Dir, f: Field) {
     } else {
       segment.x += 1
     }
-    if segment.x < 0 do segment.x = f.width + segment.x
-    segment.x %= f.width
-    // if segment.x < 0 || segment.x >= f.width {
-    //   fmt.eprintln("TOO FAR")
-    //   copy(p.segments[:], old_segments[:])
-    //   return
-    // }
+    // if segment.x < 0 do segment.x = f.width + segment.x
+    // segment.x %= f.width
+    if segment.x < 0 || segment.x >= f.width {
+      fmt.eprintln("TOO FAR")
+      copy(p.segments[:], old_segments[:])
+      return
+    }
   }
 }
 
@@ -121,29 +121,53 @@ min_offset :: proc(p: Piece) -> [2]int {
   return min
 }
 
+max_offset :: proc(p: Piece) -> [2]int {
+  max := [2]int{min(int), min(int)}
+  for segment in p.segments {
+    if segment.x > max.x do max.x = segment.x
+    if segment.y > max.y do max.y = segment.y
+  }
+  return max
+}
+
+offset_piece :: proc(p: ^Piece, offset: [2]int) {
+  for &segment in p.segments do segment += offset
+}
+
 rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
   old_segments := make([dynamic][2]int, len(p.segments), context.temp_allocator)
   copy(old_segments[:], p.segments[:])
   min := min_offset(p^)
   for &segment in p.segments {
     if d == .LEFT {
-      segment = min + (segment - min) * matrix[2, 2]int{
-              0, -1,
-              1, 0,
-            }
+      segment = (segment - min) * matrix[2, 2]int{
+            0, -1,
+            1, 0,
+          }
     } else {
-      segment = min + (segment - min) * matrix[2, 2]int{
-              0, 1,
-              -1, 0,
-            }
+      segment = (segment - min) * matrix[2, 2]int{
+            0, 1,
+            -1, 0,
+          }
     }
     // if segment.x < 0 do segment.x = f.width + segment.x
     // segment.x %= f.width
-    if segment.x < 0 || segment.x >= f.width || segment.y >= f.height {
-      fmt.eprintln("ROTATED WRONG")
-      copy(p.segments[:], old_segments[:])
-      return
-    }
+    // if segment.x < 0 || segment.x >= f.width || segment.y >= f.height {
+    //   fmt.eprintln("ROTATED WRONG")
+    //   copy(p.segments[:], old_segments[:])
+    //   return
+    // }
+  }
+  new_min_offset := min_offset(p^)
+  offset_piece(p, -new_min_offset)
+  offset_piece(p, min)
+  min_o := min_offset(p^)
+  max_o := max_offset(p^)
+  if min_o.x < 0 {
+    offset_piece(p, {-min_o.x, 0})
+  }
+  if max_o.x >= f.width {
+    offset_piece(p, {f.width - max_o.x, 0})
   }
 }
 
@@ -164,14 +188,24 @@ handle_input :: proc(p: ^Piece, f: Field) -> (res: ActionSet) {
   return
 }
 
-bedris :: proc(f: ^Field) {
+bedris :: proc(f: ^Field) -> int {
+  lines := 0
   for i := f.height - 1; i >= 0; i -= 1 {
     if slice.all_of_proc(f.data[i * f.width:][:f.width], proc(v: Tile) -> bool {return v.filled}) {
-      copy(f.data[f.width:], f.data[:len(f.data) - f.width])
+      copy(f.data[f.width:], f.data[:len(f.data) - (f.height - i) * f.width])
       slice.fill(f.data[:f.width], Tile{false, rl.BLANK})
       i += 1
+      lines += 1
     }
   }
+  return lines
+}
+
+render_score :: proc(s: int) {
+  w := rl.GetScreenWidth()
+  text := fmt.ctprint(s)
+  l := rl.MeasureText(text, 20)
+  rl.DrawText(text, w - l - 10, 10, 20, rl.LIGHTGRAY)
 }
 
 main :: proc() {
@@ -188,6 +222,7 @@ main :: proc() {
   frame_counter := 0
   speed := false
   acceleration := 2
+  score := 0
   for !rl.WindowShouldClose() {
     defer free_all(context.temp_allocator)
     defer frame_counter += 1
@@ -214,11 +249,13 @@ main :: proc() {
         piece = make_piece()
       }
     }
-    bedris(&field)
+    lines := bedris(&field)
+    if lines > 0 do score += 10 * lines + (lines - 1) * (lines - 1) * 5
     rl.ClearBackground(rl.GRAY)
     rl.BeginDrawing()
     render_field(field)
     render_piece(piece)
+    render_score(score)
     rl.EndDrawing()
   }
 }
