@@ -236,11 +236,21 @@ render_queue :: proc(qs: [3]Piece, f: Field) {
   tile_size := 40
   width := f.width
   for q, idx in qs {
-    // min_off := min_offset(q)
-    // offset_piece(&q, -min_off)
     for s in q.segments {
-      rl.DrawRectangle(i32((width + 1) * tile_size + s.x * tile_size), i32(tile_size + s.y * tile_size + idx * 4 * tile_size), auto_cast tile_size, auto_cast tile_size, q.color)
+      rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(tile_size + s.y * tile_size + idx * 4 * tile_size), auto_cast tile_size, auto_cast tile_size, q.color)
     }
+  }
+}
+
+render_pocket :: proc(p: Piece, f: Field) {
+  pocket := copy_piece(p)
+  defer delete(pocket.segments)
+  tile_size := 40
+  width := f.width
+  min_off := min_offset(pocket)
+  offset_piece(&pocket, -min_off)
+  for s in pocket.segments {
+    rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(tile_size + s.y * tile_size + 12 * tile_size), auto_cast tile_size, auto_cast tile_size, pocket.color)
   }
 }
 
@@ -309,7 +319,8 @@ main :: proc() {
     }
     if .POCKET_SWAP in actions {
       if pocket.color == rl.GRAY {
-        pocket = copy_piece(piece)
+        pocket = piece
+        piece = make_piece(&bag)
       } else {
         pocket.color, piece.color = piece.color, pocket.color
         slice.swap_between(pocket.segments[:], piece.segments[:])
@@ -344,6 +355,7 @@ main :: proc() {
     render_preview_piece(preview_piece)
     render_score(score)
     render_queue(piece_queue, field)
+    render_pocket(pocket, field)
     rl.EndDrawing()
   }
 }
