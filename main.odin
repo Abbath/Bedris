@@ -352,6 +352,10 @@ main :: proc() {
     lines := bedris(&field)
     if lines == -1 {
       score = 0
+      speed = 0
+      acceleration = 2
+      piece_counter = 0
+      frame_counter = 1
       delete_field(field)
       field = make_field(FIELD_WIDTH, FIELD_HEIGHT)
     }
