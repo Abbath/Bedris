@@ -367,7 +367,12 @@ main :: proc() {
       delete_field(field)
       field = make_field(FIELD_WIDTH, FIELD_HEIGHT)
     }
-    if lines > 0 do score += 10 * lines + (lines - 1) * (lines - 1) * 5
+    if lines > 0 do switch lines {
+    case 1: score += 100 * (speed + 1)
+    case 2: score += 300 * (speed + 1)
+    case 3: score += 500 * (speed + 1)
+    case 4: score += 800 * (speed + 1)
+    }
     rl.ClearBackground(rl.GRAY)
     rl.BeginDrawing()
     render_field(field)
