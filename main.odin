@@ -308,16 +308,24 @@ main :: proc() {
     if .MOVE_LEFT in actions {
       shift_piece(&piece, .LEFT, field)
       move_counter = 0
+      frame_counter = 1
     }
     if .MOVE_RIGHT in actions {
       shift_piece(&piece, .RIGHT, field)
       move_counter = 0
+      frame_counter = 1
     }
     if .MOVE_LEFT not_in actions && .MOVE_LEFT_CONT in actions do if move_counter > FPS / 3 && frame_counter % 6 == 0 do shift_piece(&piece, .LEFT, field)
     if .MOVE_RIGHT not_in actions && .MOVE_RIGHT_CONT in actions do if move_counter > FPS / 3 && frame_counter % 6 == 0 do shift_piece(&piece, .RIGHT, field)
     if .SOFT_DROP in actions do fast = true
-    if .ROT_CCW in actions do rotate_piece(&piece, .LEFT, field)
-    if .ROT_CW in actions do rotate_piece(&piece, .RIGHT, field)
+    if .ROT_CCW in actions {
+      rotate_piece(&piece, .LEFT, field)
+      frame_counter = 1
+    }
+    if .ROT_CW in actions {
+      rotate_piece(&piece, .RIGHT, field)
+      frame_counter = 1
+    }
     if .HARD_DROP in actions {
       for drop_piece(&piece, field) {}
       frame_counter = 1
