@@ -75,21 +75,37 @@ delete_field :: proc(f: Field) {
   delete(f.data)
 }
 
+render_tile :: proc(r: rl.Rectangle, c: rl.Color) {
+  dark_color := rl.ColorBrightness(c, -0.3)
+  rl.DrawRectangleRec(r, dark_color)
+  small_rect := r
+  small_rect.x += 5
+  small_rect.y += 5
+  small_rect.width -= 10
+  small_rect.height -= 10
+  rl.DrawLineEx({r.x, r.y}, {r.x, r.y} + {r.width, r.height}, 2, c)
+  rl.DrawLineEx({r.x + r.width, r.y}, {r.x, r.y} + {0, r.height}, 2, c)
+  rl.DrawRectangleRec(small_rect, c)
+}
+
 render_field :: proc(f: Field) {
   tile_size := 40
   for i in 0 ..< f.height {
     for j in 0 ..< f.width {
       rect := rl.Rectangle{f32(j * tile_size), f32(i * tile_size), auto_cast tile_size, auto_cast tile_size}
       color := at(f, i, j).color
-      rl.DrawRectangleRec(rect, color)
-      rl.DrawRectangleLinesEx(rect, 1, rl.LIGHTGRAY)
+      render_tile(rect, color)
+      rl.DrawRectangleLinesEx(rect, 1, rl.RAYWHITE if at(f, i, j).filled else rl.LIGHTGRAY)
     }
   }
 }
 
 render_piece :: proc(p: Piece) {
-  tile_size := 40
-  for segment in p.segments do rl.DrawRectangle(i32(segment.x * tile_size), i32(segment.y * tile_size), i32(tile_size), i32(tile_size), p.color)
+  tile_size: f32 = 40
+  for segment in p.segments {
+    rect := rl.Rectangle{f32(segment.x) * tile_size, f32(segment.y) * tile_size, tile_size, tile_size}
+    render_tile(rect, p.color)
+  }
 }
 
 render_preview_piece :: proc(p: Piece) {
@@ -288,7 +304,10 @@ render_hud :: proc(s: int, l: int) {
 render_queue :: proc(qs: [3]Piece, f: Field) {
   tile_size := 40
   width := f.width
-  for q, idx in qs do for s in q.segments do rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(2 * tile_size + s.y * tile_size + idx * 4 * tile_size), auto_cast tile_size, auto_cast tile_size, q.color)
+  for q, idx in qs do for s in q.segments {
+    rect := rl.Rectangle{f32(width * tile_size + s.x * tile_size + tile_size / 2), f32(2 * tile_size + s.y * tile_size + idx * 4 * tile_size), auto_cast tile_size, auto_cast tile_size}
+    render_tile(rect, q.color)
+  }
 }
 
 render_pocket :: proc(p: Piece, f: Field) {
@@ -298,7 +317,10 @@ render_pocket :: proc(p: Piece, f: Field) {
   width := f.width
   min_off := min_offset(pocket)
   offset_piece(&pocket, -min_off)
-  for s in pocket.segments do rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(tile_size + s.y * tile_size + 14 * tile_size), auto_cast tile_size, auto_cast tile_size, pocket.color)
+  for s in pocket.segments {
+    rect := rl.Rectangle{f32(width * tile_size + s.x * tile_size + tile_size / 2), f32(tile_size + s.y * tile_size + 14 * tile_size), auto_cast tile_size, auto_cast tile_size}
+    render_tile(rect, pocket.color)
+  }
 }
 
 copy_piece :: proc(p: Piece) -> Piece {
@@ -324,6 +346,7 @@ generate_bag :: proc() -> [dynamic][]Point {
 Config :: struct {
   modulo:       bool `usage:"Shift with modulo"`,
   weird_shapes: bool `usage:"Some weird pieces"`,
+  speed:        int `usage:"Speed"`,
 }
 conf: Config
 
@@ -402,7 +425,8 @@ main :: proc() {
       }
     }
     if .PAUSE in actions do pause = !pause
-    if frame_counter % (FPS - speed) == 0 || (fast && frame_counter % ((FPS - speed) / acceleration) == 0) {
+    period := FPS - speed * (conf.speed + 1)
+    if frame_counter % period == 0 || (fast && frame_counter % (period / acceleration) == 0) {
       if fast do acceleration = min(acceleration + 1, 15)
       fast = false
       dropped := drop_piece(&piece, field)
