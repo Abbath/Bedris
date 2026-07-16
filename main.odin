@@ -229,17 +229,20 @@ bedris :: proc(f: ^Field) -> int {
   return lines
 }
 
-render_score :: proc(s: int) {
+render_hud :: proc(s: int, l: int) {
   w := rl.GetScreenWidth()
-  text := fmt.ctprint(s)
-  l := rl.MeasureText(text, 20)
-  rl.DrawText(text, w - l - 10, 10, 20, rl.LIGHTGRAY)
+  text := fmt.ctprintf("SCORE: %v", s)
+  text2 := fmt.ctprintf("LEVEL: %v", l)
+  tl := rl.MeasureText(text, 20)
+  tl2 := rl.MeasureText(text2, 20)
+  rl.DrawText(text, w - tl - 10, 10, 20, rl.LIGHTGRAY)
+  rl.DrawText(text2, w - tl2 - 10, 40, 20, rl.LIGHTGRAY)
 }
 
 render_queue :: proc(qs: [3]Piece, f: Field) {
   tile_size := 40
   width := f.width
-  for q, idx in qs do for s in q.segments do rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(tile_size + s.y * tile_size + idx * 4 * tile_size), auto_cast tile_size, auto_cast tile_size, q.color)
+  for q, idx in qs do for s in q.segments do rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(2 * tile_size + s.y * tile_size + idx * 4 * tile_size), auto_cast tile_size, auto_cast tile_size, q.color)
 }
 
 render_pocket :: proc(p: Piece, f: Field) {
@@ -249,7 +252,7 @@ render_pocket :: proc(p: Piece, f: Field) {
   width := f.width
   min_off := min_offset(pocket)
   offset_piece(&pocket, -min_off)
-  for s in pocket.segments do rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(tile_size + s.y * tile_size + 12 * tile_size), auto_cast tile_size, auto_cast tile_size, pocket.color)
+  for s in pocket.segments do rl.DrawRectangle(i32(width * tile_size + s.x * tile_size + tile_size / 2), i32(tile_size + s.y * tile_size + 14 * tile_size), auto_cast tile_size, auto_cast tile_size, pocket.color)
 }
 
 copy_piece :: proc(p: Piece) -> Piece {
@@ -378,7 +381,7 @@ main :: proc() {
     render_field(field)
     render_piece(piece)
     render_preview_piece(preview_piece)
-    render_score(score)
+    render_hud(score, speed)
     render_queue(piece_queue, field)
     render_pocket(pocket, field)
     if pause {
