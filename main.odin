@@ -2,6 +2,7 @@
 package main
 
 import "core:fmt"
+import "core:math"
 import "core:math/rand"
 import "core:slice"
 import rl "vendor:raylib"
@@ -115,7 +116,7 @@ shift_piece :: proc(p: ^Piece, d: Dir, f: Field) {
     segment.x += -1 if d == .LEFT else 1
     // if segment.x < 0 do segment.x = f.width + segment.x
     // segment.x %= f.width
-    if segment.x < 0 || segment.x >= f.width || f.data[segment.y * f.width + segment.x].filled {
+    if segment.x < 0 || segment.x >= f.width || segment.y >= f.height || (segment.y > 0 && f.data[segment.y * f.width + segment.x].filled) {
       copy(p.segments[:], old_segments[:])
       return
     }
@@ -140,19 +141,37 @@ max_offset :: proc(p: Piece) -> Point {
   return max
 }
 
+com_offset :: proc(p: Piece) -> Point {
+  sum := slice.reduce(p.segments[:], Point{0, 0}, proc(a, b: Point) -> Point {return a + b})
+  median: [2]f64 = cast([2]f64)(sum) / f64(len(p.segments))
+  min_p := Point{max(int), max(int)}
+  min_d := max(f64)
+  for segment in p.segments {
+    d := math.hypot(abs(f64(segment.x) - median.x), abs(f64(segment.y) - median.y))
+    if d < min_d {
+      min_d, min_p = d, segment
+    }
+  }
+  return min_p
+}
+
 offset_piece :: proc(p: ^Piece, offset: Point) {
   for &segment in p.segments do segment += offset
 }
 
 check_collision :: proc(p: Piece, f: Field) -> bool {
-  for segment in p.segments do if f.data[segment.y * f.width + segment.x].filled do return true
+  for segment in p.segments {
+    if segment.y < 0 do continue
+    if segment.x < 0 || segment.x >= f.width || segment.y >= f.height do return true
+    if f.data[segment.y * f.width + segment.x].filled do return true
+  }
   return false
 }
 
 rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
   old_segments := make([dynamic]Point, len(p.segments), context.temp_allocator)
   copy(old_segments[:], p.segments[:])
-  min := min_offset(p^)
+  min := com_offset(p^)
   for &segment in p.segments {
     if d == .LEFT {
       segment = (segment - min) * matrix[2, 2]int{
@@ -166,7 +185,7 @@ rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
           }
     }
   }
-  new_min_offset := min_offset(p^)
+  new_min_offset := com_offset(p^)
   offset_piece(p, -new_min_offset)
   offset_piece(p, min)
   min_o := min_offset(p^)
@@ -175,13 +194,11 @@ rotate_piece :: proc(p: ^Piece, d: Dir, f: Field) {
   if max_o.x >= f.width do offset_piece(p, {f.width - max_o.x - 1, 0})
   if max_o.y >= f.height do offset_piece(p, {0, f.height - max_o.y - 1})
   if check_collision(p^, f) {
-    for x in -1 ..= 1 {
-      for y in -1 ..= 1 {
-        if x != 0 && y != 0 {
-          offset_piece(p, {x, y})
-          if !check_collision(p^, f) do return
-          offset_piece(p, -{x, y})
-        }
+    for x in ([]int{-1, 1, 2, -2}) {
+      for y in ([]int{1, 2, -1, -2}) {
+        offset_piece(p, {x, y})
+        if !check_collision(p^, f) do return
+        offset_piece(p, -{x, y})
       }
     }
     copy(p.segments[:], old_segments[:])
