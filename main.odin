@@ -380,9 +380,13 @@ handle_input :: proc(p: ^Piece, f: Field) -> (res: ActionSet) {
 }
 
 bedris :: proc(f: ^Field) -> int {
+  tile_size := 40
   lines := 0
-  for i := f.height - 1; i > 0; i -= 1 {
+  for i := f.height - 1; i >= 0; i -= 1 {
     if slice.all_of_proc(f.data[i * f.width:][:f.width], proc(v: Tile) -> bool {return v.filled}) {
+      if conf.particles do for j in 0 ..< f.width {
+        spawn_particle({f32(j * tile_size + tile_size / 2), f32(tile_size * i + tile_size / 2)}, at(f^, i, j).color)
+      }
       copy(f.data[f.width:], f.data[:len(f.data) - (f.height - i) * f.width])
       slice.fill(f.data[:f.width], Tile{false, rl.BLANK})
       i += 1
@@ -402,11 +406,12 @@ render_hud :: proc(s: int, l: int) {
   rl.DrawText(text2, w - tl2 - 10, 40, 20, rl.LIGHTGRAY)
 }
 
-render_queue :: proc(qs: [3]Piece, f: Field) {
+render_queue :: proc(qs: [dynamic]Piece, f: Field) {
   tile_size := 40
+  small_tile_size := len(qs) > 3 ? tile_size / 2 : tile_size
   width := f.width
   for q, idx in qs do for s in q.segments {
-    rect := rl.Rectangle{f32(width * tile_size + s.x * tile_size + tile_size / 2), f32(2 * tile_size + s.y * tile_size + idx * 4 * tile_size), auto_cast tile_size, auto_cast tile_size}
+    rect := rl.Rectangle{f32(width * tile_size + s.x * small_tile_size + tile_size / 2), f32(2 * tile_size + s.y * small_tile_size + idx * 4 * small_tile_size), auto_cast small_tile_size, auto_cast small_tile_size}
     render_tile(rect, q.color)
   }
 }
@@ -476,12 +481,57 @@ generate_garbage :: proc(f: ^Field) {
   }
 }
 
+Particle :: struct {
+  alive: bool,
+  pos:   rl.Vector2,
+  vel:   rl.Vector2,
+  color: rl.Color,
+}
+particles: [1024]Particle
+
+spawn_particle :: proc(p: rl.Vector2, c: rl.Color) {
+  for &particle in particles {
+    if !particle.alive {
+      particle.alive = true
+      particle.pos = p
+      particle.vel = {rand.float32_range(-10, 10), -20}
+      particle.color = c
+      break
+    }
+  }
+}
+
+process_particles :: proc() {
+  h := rl.GetScreenHeight()
+  for &p in particles {
+    if p.alive {
+      if p.pos.y > auto_cast h {
+        p.alive = false
+        continue
+      }
+      p.pos += p.vel
+      p.vel += {0, 1}
+    }
+  }
+}
+
+render_particles :: proc() {
+  tile_size := 40
+  for p in particles {
+    rect := rl.Rectangle{p.pos.x - f32(tile_size / 2), p.pos.y - f32(tile_size / 2), auto_cast tile_size, auto_cast tile_size}
+    rl.DrawRectangleRec(rect, p.color)
+  }
+}
+
+
 Config :: struct {
   modulo:       bool `usage:"Shift with modulo"`,
   weird_shapes: bool `usage:"Some weird pieces"`,
   speed:        int `usage:"Speed"`,
   tunnel:       bool `usage:"Some insane rotations"`,
   garbage:      bool `usage:"Some garbage"`,
+  particles:    bool `usage:"Some particles"`,
+  queue:        int `usage:"Queue size"`,
 }
 conf: Config
 
@@ -506,10 +556,12 @@ main :: proc() {
   fast := false
   acceleration := 2
   score := 0
-  piece_queue: [3]Piece
+  queue_size := max(1, min(6, conf.queue == 0 ? 3 : conf.queue))
+  piece_queue := make([dynamic]Piece, queue_size)
+  defer delete(piece_queue)
   pocket := Piece{.SQUARE, rl.GRAY, {}}
   defer delete(pocket.segments)
-  for i in 0 ..< 3 {
+  for i in 0 ..< queue_size {
     piece_queue[i].shape = get_queue_shape(bag, i)
     piece_queue[i].color = rl.RAYWHITE
     piece_queue[i].segments = make([dynamic]Point, 4)
@@ -587,7 +639,7 @@ main :: proc() {
         cement_piece(&field, piece)
         piece = make_piece(&bag)
         piece_counter += 1
-        for i in 0 ..< 3 {
+        for i in 0 ..< queue_size {
           piece_queue[i].shape = get_queue_shape(bag, i)
           copy(piece_queue[i].segments[:], traditional_shapes[piece_queue[i].shape][:])
         }
@@ -618,14 +670,16 @@ main :: proc() {
     case 3: score += 500 * (level + 1)
     case 4: score += 800 * (level + 1)
     }
-    rl.ClearBackground(rl.GRAY)
+    if conf.particles do process_particles()
     rl.BeginDrawing()
+    rl.ClearBackground(rl.GRAY)
     render_field(field)
     render_piece(piece)
     render_preview_piece(preview_piece)
     render_hud(score, level)
     render_queue(piece_queue, field)
     render_pocket(pocket, field)
+    if conf.particles do render_particles()
     if pause {
       w := rl.GetScreenWidth()
       h := rl.GetScreenHeight()
@@ -640,5 +694,3 @@ main :: proc() {
 
 // TODO: Multiple randomizers
 // TODO: Palettes
-// TODO: Queue size
-// TODO: Particles
