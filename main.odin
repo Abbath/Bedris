@@ -126,12 +126,12 @@ render_tile :: proc(r: rl.Rectangle, c: rl.Color) {
   dark_color := rl.ColorBrightness(c, -0.3)
   rl.DrawRectangleRec(r, dark_color)
   small_rect := r
-  small_rect.x += 5
-  small_rect.y += 5
-  small_rect.width -= 10
-  small_rect.height -= 10
-  rl.DrawLineEx({r.x, r.y}, {r.x, r.y} + {r.width, r.height}, 2, c)
-  rl.DrawLineEx({r.x + r.width, r.y}, {r.x, r.y} + {0, r.height}, 2, c)
+  small_rect.x += f32(tile_size) / 8
+  small_rect.y += f32(tile_size) / 8
+  small_rect.width -= f32(tile_size) / 4
+  small_rect.height -= f32(tile_size) / 4
+  rl.DrawLineEx({r.x, r.y}, {r.x, r.y} + {r.width, r.height}, f32(tile_size) / 20, c)
+  rl.DrawLineEx({r.x + r.width, r.y}, {r.x, r.y} + {0, r.height}, f32(tile_size) / 20, c)
   rl.DrawRectangleRec(small_rect, c)
 }
 
@@ -141,7 +141,7 @@ render_field :: proc(f: Field) {
       rect := rl.Rectangle{f32(j * tile_size), f32(i * tile_size), auto_cast tile_size, auto_cast tile_size}
       color := at(f, i, j).color
       render_tile(rect, color)
-      rl.DrawRectangleLinesEx(rect, 1, rl.RAYWHITE if at(f, i, j).filled else rl.LIGHTGRAY)
+      rl.DrawRectangleLinesEx(rect, f32(tile_size) / 40, rl.RAYWHITE if at(f, i, j).filled else rl.LIGHTGRAY)
     }
   }
 }
@@ -404,10 +404,11 @@ render_hud :: proc(s: int, l: int) {
   w := i32(tile_size * 15)
   text := fmt.ctprintf("SCORE: %v", s)
   text2 := fmt.ctprintf("LEVEL: %v", l)
-  tl := rl.MeasureText(text, 20)
-  tl2 := rl.MeasureText(text2, 20)
-  rl.DrawText(text, w - tl - 10, 10, 20, rl.LIGHTGRAY)
-  rl.DrawText(text2, w - tl2 - 10, 40, 20, rl.LIGHTGRAY)
+  font_size := i32(tile_size / 2)
+  tl := rl.MeasureText(text, font_size)
+  tl2 := rl.MeasureText(text2, font_size)
+  rl.DrawText(text, w - tl - font_size / 2, font_size / 2, font_size, rl.LIGHTGRAY)
+  rl.DrawText(text2, w - tl2 - font_size / 2, font_size * 2, font_size, rl.LIGHTGRAY)
 }
 
 render_queue :: proc(qs: [dynamic]Piece, f: Field) {
@@ -607,15 +608,20 @@ main :: proc() {
   move_counter := 0
   gravity := 0
   game_over := false
+  w := rl.GetScreenWidth()
+  h := rl.GetScreenHeight()
+  camera := rl.Camera2D{{f32(w) / 2, f32(h) / 2}, {f32(w) / 2, f32(h) / 2}, 0, 1}
   for !rl.WindowShouldClose() {
     defer free_all(context.temp_allocator)
     defer if !pause {
       frame_counter += 1
       move_counter += 1
     }
-    w := rl.GetScreenWidth()
-    h := rl.GetScreenHeight()
-    tile_size = w > h ? int(h) / 20 : int(w) / 15
+    w = rl.GetScreenWidth()
+    h = rl.GetScreenHeight()
+    tile_size = f32(w) / 1.5 > f32(h) / 2 ? int(h) / 20 : int(w) / 15
+    camera.target = {f32(tile_size) * 15 / 2, f32(tile_size) * 20 / 2}
+    camera.offset = {f32(w) / 2, f32(h) / 2}
     actions := handle_input(&piece, field)
     if .MOVE_LEFT in actions {
       shift_piece(&piece, .LEFT, field)
@@ -708,6 +714,7 @@ main :: proc() {
     }
     if conf.particles do process_particles()
     rl.BeginDrawing()
+    rl.BeginMode2D(camera)
     rl.ClearBackground(rl.GRAY)
     render_field(field)
     render_piece(piece)
@@ -722,6 +729,7 @@ main :: proc() {
       rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - 20 - 1, 40, rl.WHITE)
       rl.DrawText(text, w / 2 - l / 2, h / 2 - 20, 40, rl.BLACK)
     }
+    rl.EndMode2D()
     rl.EndDrawing()
   }
 }
