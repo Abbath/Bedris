@@ -85,7 +85,17 @@ traditional_colors := [Shape]rl.Color {
   .WEIRD  = rl.BROWN,
 }
 
-shapes := [][]Point{square, line, snake1, snake2, jshape, lshape, tshape}
+sega_colors := [Shape]rl.Color {
+  .SQUARE = rl.YELLOW,
+  .LINE   = rl.RED,
+  .SNAKE1 = rl.LIME,
+  .SNAKE2 = rl.VIOLET,
+  .JSHAPE = rl.BLUE,
+  .LSHAPE = rl.ORANGE,
+  .TSHAPE = rl.SKYBLUE,
+  .WEIRD  = rl.BROWN,
+}
+
 weird_shapes := [][]Point{oner, twoer, threeer1, threeer2, threeer3, fiver1, fiver2, fiver3, fiver4, fiver5, fiver6, fiver7, fiver8, fiver9, fiver10}
 weird_colors := []rl.Color{rl.PURPLE, rl.PINK, rl.GREEN, rl.GOLD}
 
@@ -93,7 +103,7 @@ make_piece :: proc(bag: ^Bag) -> (p: Piece) {
   shape := get_shape(bag)
   if conf.weird_shapes do if rand.uint64() % 7 == 0 do shape = .WEIRD
   if shape != .WEIRD {
-    p = Piece{shape, traditional_colors[shape], make([dynamic]Point, len(traditional_shapes[shape]))}
+    p = Piece{shape, traditional_colors[shape] if conf.palette != "sega" else sega_colors[shape], make([dynamic]Point, len(traditional_shapes[shape]))}
     copy(p.segments[:], traditional_shapes[shape][:])
   } else {
     weird_segments := rand.choice(weird_shapes)
@@ -437,13 +447,15 @@ copy_piece :: proc(p: Piece) -> Piece {
 }
 
 Bag :: struct {
+  size:     int,
   this_bag: [dynamic]Shape,
   next_bag: [dynamic]Shape,
 }
 
-init_bag :: proc() -> (b: Bag) {
-  b.this_bag = make([dynamic]Shape, 7)
-  b.next_bag = make([dynamic]Shape, 7)
+init_bag :: proc(s: int) -> (b: Bag) {
+  b.size = s
+  b.this_bag = make([dynamic]Shape, s)
+  b.next_bag = make([dynamic]Shape, s)
   for &t, idx in b.this_bag do t = Shape(idx % 7)
   for &t, idx in b.next_bag do t = Shape(idx % 7)
   rand.shuffle(b.this_bag[:])
@@ -460,9 +472,9 @@ get_shape :: proc(b: ^Bag) -> Shape {
   if len(b.this_bag) > 0 {
     return pop(&b.this_bag)
   }
-  resize(&b.this_bag, 7)
+  resize(&b.this_bag, b.size)
   copy(b.this_bag[:], b.next_bag[:])
-  for &t, idx in b.next_bag do t = Shape(idx)
+  for &t, idx in b.next_bag do t = Shape(idx % 7)
   rand.shuffle(b.next_bag[:])
   return get_shape(b)
 }
@@ -532,6 +544,8 @@ Config :: struct {
   garbage:      bool `usage:"Some garbage"`,
   particles:    bool `usage:"Some particles"`,
   queue:        int `usage:"Queue size"`,
+  palette:      string `usage:"Some palette"`,
+  bag_size:     int `usage:"Bag size"`,
 }
 conf: Config
 
@@ -545,7 +559,7 @@ main :: proc() {
   rl.SetConfigFlags({.WINDOW_RESIZABLE})
   rl.InitWindow(600, 800, "BEDRIS")
   defer rl.CloseWindow()
-  bag := init_bag()
+  bag := init_bag(max(7, conf.bag_size == 0 ? 7 : conf.bag_size))
   defer delete_bag(bag)
   field := make_field(FIELD_WIDTH, FIELD_HEIGHT)
   defer delete_field(field)
@@ -691,6 +705,3 @@ main :: proc() {
     rl.EndDrawing()
   }
 }
-
-// TODO: Multiple randomizers
-// TODO: Palettes
