@@ -31,6 +31,8 @@ Shape :: enum {
   WEIRD,
 }
 
+SHAPE_NUMBER :: len(Shape) - 1
+
 Piece :: struct {
   shape:    Shape,
   color:    rl.Color,
@@ -469,10 +471,10 @@ Randomizer :: enum {
 
 get_new_shape :: proc(idx: int) -> (shape: Shape) {
   switch conf.randomizer {
-  case .BAG: shape = Shape(idx % 7)
-  case .RANDOM: shape = Shape(rand.int_range(0, 7))
-  case .STATS: if len(stats) < 7 {
-        shape = Shape(rand.int_range(0, 7))
+  case .BAG: shape = Shape(idx % SHAPE_NUMBER)
+  case .RANDOM: shape = Shape(rand.int_range(0, SHAPE_NUMBER))
+  case .STATS: if len(stats) < SHAPE_NUMBER {
+        shape = Shape(rand.int_range(0, SHAPE_NUMBER))
       } else {
         min_shape: Shape = .WEIRD
         min_freq := max(int)
@@ -579,7 +581,7 @@ main :: proc() {
   rl.SetConfigFlags({.WINDOW_RESIZABLE})
   rl.InitWindow(600, 800, "BEDRIS")
   defer rl.CloseWindow()
-  bag := init_bag(max(7, conf.bag_size == 0 ? 7 : conf.bag_size))
+  bag := init_bag(max(SHAPE_NUMBER, conf.bag_size == 0 ? SHAPE_NUMBER : conf.bag_size))
   defer delete_bag(bag)
   field := make_field(FIELD_WIDTH, FIELD_HEIGHT)
   defer delete_field(field)
@@ -601,7 +603,7 @@ main :: proc() {
     piece_queue[i].segments = make([dynamic]Point, 4)
     copy(piece_queue[i].segments[:], traditional_shapes[piece_queue[i].shape][:])
   }
-  defer for i in 0 ..< 3 do delete(piece_queue[i].segments)
+  defer for i in 0 ..< queue_size do delete(piece_queue[i].segments)
   level := 0
   piece_counter := 0
   pause := false
@@ -725,9 +727,10 @@ main :: proc() {
     if conf.particles do render_particles()
     if pause {
       text := fmt.ctprint("PAUSE")
-      l := rl.MeasureText(text, 40)
-      rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - 20 - 1, 40, rl.WHITE)
-      rl.DrawText(text, w / 2 - l / 2, h / 2 - 20, 40, rl.BLACK)
+      font_size := i32(tile_size)
+      l := rl.MeasureText(text, font_size)
+      rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - font_size / 2 - 1, font_size, rl.WHITE)
+      rl.DrawText(text, w / 2 - l / 2, h / 2 - font_size / 2, font_size, rl.BLACK)
     }
     rl.EndMode2D()
     rl.EndDrawing()
