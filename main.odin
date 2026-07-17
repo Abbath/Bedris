@@ -478,3 +478,14 @@ main :: proc() {
     rl.EndDrawing()
   }
 }
+
+// TODO: Multiple randomizers
+// TODO: Tunneling mode
+// TODO: Flat side down
+// TODO: Spawn height
+// TODO: Palettes
+// TODO: Gravity
+// TODO: Reflections
+// TODO: Garbage lines
+// TODO: Queue size
+// TODO: Particles
