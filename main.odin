@@ -336,16 +336,16 @@ reflect_piece :: proc(p: ^Piece, d: DirRef, f: Field) {
   if max_o.x >= f.width do offset_piece(p, {f.width - max_o.x - 1, 0})
   if max_o.y >= f.height do offset_piece(p, {0, f.height - max_o.y - 1})
   if check_collision(p^, f) {
-    for x in ([]int{-1, 1, 2, -2}) {
-      for y in ([]int{1, 2, -1, -2}) {
+    for y in ([]int{1, 2, -1, -2}) {
+      for x in ([]int{-1, 1, 2, -2}) {
         offset_piece(p, {x, y})
         if !check_collision(p^, f) do return
         offset_piece(p, -{x, y})
       }
     }
     if conf.tunnel {
-      for x in ([]int{-3, 3, 4, -4, 5, -5}) {
-        for y in ([]int{3, 4, 5, -3, -4, -5}) {
+      for y in ([]int{3, 4, 5, -3, -4, -5}) {
+        for x in ([]int{-3, 3, 4, -4, 5, -5}) {
           offset_piece(p, {x, y})
           if !check_collision(p^, f) do return
           offset_piece(p, -{x, y})
@@ -390,9 +390,7 @@ bedris :: proc(f: ^Field) -> int {
   lines := 0
   for i := f.height - 1; i >= 0; i -= 1 {
     if slice.all_of_proc(f.data[i * f.width:][:f.width], proc(v: Tile) -> bool {return v.filled}) {
-      if conf.particles do for j in 0 ..< f.width {
-        spawn_particle({f32(j * tile_size + tile_size / 2), f32(tile_size * i + tile_size / 2)}, at(f^, i, j).color)
-      }
+      if conf.particles do for j in 0 ..< f.width do spawn_particle({f32(j * tile_size + tile_size / 2), f32(tile_size * i + tile_size / 2)}, at(f^, i, j).color)
       copy(f.data[f.width:], f.data[:len(f.data) - (f.height - i) * f.width])
       slice.fill(f.data[:f.width], Tile{false, rl.BLANK})
       i += 1
@@ -491,9 +489,7 @@ get_new_shape :: proc(idx: int) -> (shape: Shape) {
 }
 
 get_shape :: proc(b: ^Bag) -> Shape {
-  if len(b.this_bag) > 0 {
-    return pop(&b.this_bag)
-  }
+  if len(b.this_bag) > 0 do return pop(&b.this_bag)
   resize(&b.this_bag, b.size)
   copy(b.this_bag[:], b.next_bag[:])
   for &t, idx in b.next_bag do t = get_new_shape(idx)
@@ -502,17 +498,13 @@ get_shape :: proc(b: ^Bag) -> Shape {
 }
 
 get_queue_shape :: proc(b: Bag, i: int) -> Shape {
-  if len(b.this_bag) > i {
-    return b.this_bag[len(b.this_bag) - 1 - i]
-  }
+  if len(b.this_bag) > i do return b.this_bag[len(b.this_bag) - 1 - i]
   return b.next_bag[len(b.next_bag) + len(b.this_bag) - 1 - i]
 }
 
 generate_garbage :: proc(f: ^Field) {
   copy(f.data[:len(f.data) - f.width], f.data[f.width:])
-  for i in 0 ..< f.width {
-    at(f, FIELD_HEIGHT - 1, i)^ = Tile{true, rl.BROWN} if rand.uint64() % 2 == 0 else Tile{}
-  }
+  for i in 0 ..< f.width do at(f, FIELD_HEIGHT - 1, i)^ = Tile{true, rl.BROWN} if rand.uint64() % 2 == 0 else Tile{}
 }
 
 Particle :: struct {
@@ -567,7 +559,7 @@ Config :: struct {
   queue:        int `usage:"Queue size"`,
   palette:      string `usage:"Some palette"`,
   bag_size:     int `usage:"Bag size"`,
-  randomizer:   Randomizer `usage:"Randomier type"`,
+  randomizer:   Randomizer `usage:"Randomizer type"`,
 }
 conf: Config
 
