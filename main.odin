@@ -136,7 +136,6 @@ render_tile :: proc(r: rl.Rectangle, c: rl.Color) {
 }
 
 render_field :: proc(f: Field) {
-  tile_size := 40
   for i in 0 ..< f.height {
     for j in 0 ..< f.width {
       rect := rl.Rectangle{f32(j * tile_size), f32(i * tile_size), auto_cast tile_size, auto_cast tile_size}
@@ -148,15 +147,13 @@ render_field :: proc(f: Field) {
 }
 
 render_piece :: proc(p: Piece) {
-  tile_size: f32 = 40
   for segment in p.segments {
-    rect := rl.Rectangle{f32(segment.x) * tile_size, f32(segment.y) * tile_size, tile_size, tile_size}
+    rect := rl.Rectangle{f32(segment.x * tile_size), f32(segment.y * tile_size), auto_cast tile_size, auto_cast tile_size}
     render_tile(rect, p.color)
   }
 }
 
 render_preview_piece :: proc(p: Piece) {
-  tile_size := 40
   color := p.color
   color.a = 100
   for segment in p.segments do rl.DrawRectangle(i32(segment.x * tile_size), i32(segment.y * tile_size), i32(tile_size), i32(tile_size), color)
@@ -291,16 +288,16 @@ rotate_piece :: proc(p: ^Piece, d: DirRot, f: Field) {
   if max_o.x >= f.width do offset_piece(p, {f.width - max_o.x - 1, 0})
   if max_o.y >= f.height do offset_piece(p, {0, f.height - max_o.y - 1})
   if check_collision(p^, f) {
-    for x in ([]int{-1, 1, 2, -2}) {
-      for y in ([]int{1, 2, -1, -2}) {
+    for y in ([]int{1, 2, -1, -2}) {
+      for x in ([]int{-1, 1, 2, -2}) {
         offset_piece(p, {x, y})
         if !check_collision(p^, f) do return
         offset_piece(p, -{x, y})
       }
     }
     if conf.tunnel {
-      for x in ([]int{-3, 3, 4, -4, 5, -5}) {
-        for y in ([]int{3, 4, 5, -3, -4, -5}) {
+      for y in ([]int{3, 4, 5, -3, -4, -5}) {
+        for x in ([]int{-3, 3, 4, -4, 5, -5}) {
           offset_piece(p, {x, y})
           if !check_collision(p^, f) do return
           offset_piece(p, -{x, y})
@@ -390,7 +387,6 @@ handle_input :: proc(p: ^Piece, f: Field) -> (res: ActionSet) {
 }
 
 bedris :: proc(f: ^Field) -> int {
-  tile_size := 40
   lines := 0
   for i := f.height - 1; i >= 0; i -= 1 {
     if slice.all_of_proc(f.data[i * f.width:][:f.width], proc(v: Tile) -> bool {return v.filled}) {
@@ -407,7 +403,7 @@ bedris :: proc(f: ^Field) -> int {
 }
 
 render_hud :: proc(s: int, l: int) {
-  w := rl.GetScreenWidth()
+  w := i32(tile_size * 15)
   text := fmt.ctprintf("SCORE: %v", s)
   text2 := fmt.ctprintf("LEVEL: %v", l)
   tl := rl.MeasureText(text, 20)
@@ -417,7 +413,6 @@ render_hud :: proc(s: int, l: int) {
 }
 
 render_queue :: proc(qs: [dynamic]Piece, f: Field) {
-  tile_size := 40
   small_tile_size := len(qs) > 3 ? tile_size / 2 : tile_size
   width := f.width
   for q, idx in qs do for s in q.segments {
@@ -429,7 +424,6 @@ render_queue :: proc(qs: [dynamic]Piece, f: Field) {
 render_pocket :: proc(p: Piece, f: Field) {
   pocket := copy_piece(p)
   defer delete(pocket.segments)
-  tile_size := 40
   width := f.width
   min_off := min_offset(pocket)
   offset_piece(&pocket, -min_off)
@@ -456,8 +450,8 @@ init_bag :: proc(s: int) -> (b: Bag) {
   b.size = s
   b.this_bag = make([dynamic]Shape, s)
   b.next_bag = make([dynamic]Shape, s)
-  for &t, idx in b.this_bag do t = Shape(idx % 7)
-  for &t, idx in b.next_bag do t = Shape(idx % 7)
+  for &t, idx in b.this_bag do t = get_new_shape(idx)
+  for &t, idx in b.next_bag do t = get_new_shape(idx)
   rand.shuffle(b.this_bag[:])
   rand.shuffle(b.next_bag[:])
   return
@@ -468,13 +462,41 @@ delete_bag :: proc(b: Bag) {
   delete(b.next_bag)
 }
 
+Randomizer :: enum {
+  BAG,
+  STATS,
+  RANDOM,
+}
+
+get_new_shape :: proc(idx: int) -> (shape: Shape) {
+  switch conf.randomizer {
+  case .BAG: shape = Shape(idx % 7)
+  case .RANDOM: shape = Shape(rand.int_range(0, 7))
+  case .STATS: if len(stats) < 7 {
+        shape = Shape(rand.int_range(0, 7))
+      } else {
+        min_shape: Shape = .WEIRD
+        min_freq := max(int)
+        for k, v in stats {
+          if v < min_freq {
+            min_freq = v
+            min_shape = k
+          }
+        }
+        shape = min_shape
+      }
+  }
+  stats[shape] += 1
+  return
+}
+
 get_shape :: proc(b: ^Bag) -> Shape {
   if len(b.this_bag) > 0 {
     return pop(&b.this_bag)
   }
   resize(&b.this_bag, b.size)
   copy(b.this_bag[:], b.next_bag[:])
-  for &t, idx in b.next_bag do t = Shape(idx % 7)
+  for &t, idx in b.next_bag do t = get_new_shape(idx)
   rand.shuffle(b.next_bag[:])
   return get_shape(b)
 }
@@ -528,7 +550,6 @@ process_particles :: proc() {
 }
 
 render_particles :: proc() {
-  tile_size := 40
   for p in particles {
     rect := rl.Rectangle{p.pos.x - f32(tile_size / 2), p.pos.y - f32(tile_size / 2), auto_cast tile_size, auto_cast tile_size}
     rl.DrawRectangleRec(rect, p.color)
@@ -546,8 +567,12 @@ Config :: struct {
   queue:        int `usage:"Queue size"`,
   palette:      string `usage:"Some palette"`,
   bag_size:     int `usage:"Bag size"`,
+  randomizer:   Randomizer `usage:"Randomier type"`,
 }
 conf: Config
+
+tile_size := 40
+stats: map[Shape]int
 
 main :: proc() {
   when ODIN_DEBUG {
@@ -555,6 +580,8 @@ main :: proc() {
     defer debug_stuff_defer()
   }
   flags.parse_or_exit(&conf, os.args[:])
+  stats = make(map[Shape]int)
+  defer delete(stats)
   rl.SetTargetFPS(FPS)
   rl.SetConfigFlags({.WINDOW_RESIZABLE})
   rl.InitWindow(600, 800, "BEDRIS")
@@ -594,6 +621,9 @@ main :: proc() {
       frame_counter += 1
       move_counter += 1
     }
+    w := rl.GetScreenWidth()
+    h := rl.GetScreenHeight()
+    tile_size = w > h ? int(h) / 20 : int(w) / 15
     actions := handle_input(&piece, field)
     if .MOVE_LEFT in actions {
       shift_piece(&piece, .LEFT, field)
@@ -695,8 +725,6 @@ main :: proc() {
     render_pocket(pocket, field)
     if conf.particles do render_particles()
     if pause {
-      w := rl.GetScreenWidth()
-      h := rl.GetScreenHeight()
       text := fmt.ctprint("PAUSE")
       l := rl.MeasureText(text, 40)
       rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - 20 - 1, 40, rl.WHITE)
