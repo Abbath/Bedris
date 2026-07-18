@@ -371,6 +371,7 @@ Action :: enum {
   PAUSE,
   REFLECT_HOR,
   REFLECT_VER,
+  RESET,
 }
 ActionSet :: bit_set[Action]
 
@@ -385,6 +386,7 @@ handle_input :: proc(p: ^Piece, f: Field) -> (res: ActionSet) {
   if rl.IsKeyPressed(.Q) do res |= {.POCKET_SWAP}
   if rl.IsKeyPressed(.P) do res |= {.PAUSE}
   if rl.IsKeyPressed(.R) do res |= {.REFLECT_VER} if rl.IsKeyDown(.LEFT_SHIFT) else {.REFLECT_HOR}
+  if rl.IsKeyPressed(.F10) do res |= {.RESET}
   return
 }
 
@@ -615,7 +617,7 @@ main :: proc() {
   camera := rl.Camera2D{{f32(w) / 2, f32(h) / 2}, {f32(w) / 2, f32(h) / 2}, 0, 1}
   for !rl.WindowShouldClose() {
     defer free_all(context.temp_allocator)
-    defer if !pause {
+    defer if !pause && !game_over {
       frame_counter += 1
       move_counter += 1
     }
@@ -625,50 +627,52 @@ main :: proc() {
     camera.target = {f32(tile_size) * 15 / 2, f32(tile_size) * 20 / 2}
     camera.offset = {f32(w) / 2, f32(h) / 2}
     actions := handle_input(&piece, field)
-    if .MOVE_LEFT in actions {
-      shift_piece(&piece, .LEFT, field)
-      move_counter = 0
-      frame_counter = 1
-    }
-    if .MOVE_RIGHT in actions {
-      shift_piece(&piece, .RIGHT, field)
-      move_counter = 0
-      frame_counter = 1
-    }
-    if .MOVE_LEFT not_in actions && .MOVE_LEFT_CONT in actions do if move_counter > FPS / 3 && frame_counter % 6 == 0 do shift_piece(&piece, .LEFT, field)
-    if .MOVE_RIGHT not_in actions && .MOVE_RIGHT_CONT in actions do if move_counter > FPS / 3 && frame_counter % 6 == 0 do shift_piece(&piece, .RIGHT, field)
-    if .SOFT_DROP in actions do fast = true
-    if .ROT_CCW in actions {
-      rotate_piece(&piece, .LEFT, field)
-      frame_counter = 1
-    }
-    if .ROT_CW in actions {
-      rotate_piece(&piece, .RIGHT, field)
-      frame_counter = 1
-    }
-    if .REFLECT_HOR in actions {
-      reflect_piece(&piece, .HOR, field)
-      frame_counter = 1
-    }
-    if .REFLECT_VER in actions {
-      reflect_piece(&piece, .VER, field)
-      frame_counter = 1
-    }
-    if .HARD_DROP in actions {
-      for drop_piece(&piece, field) {}
-      frame_counter = 1
-    }
-    if .POCKET_SWAP in actions {
-      if pocket.color == rl.GRAY {
-        pocket = piece
-        piece = make_piece(&bag)
-      } else {
-        pocket.color, piece.color = piece.color, pocket.color
-        pocket.shape, piece.shape = piece.shape, pocket.shape
-        slice.swap_between(pocket.segments[:], piece.segments[:])
+    if .PAUSE in actions && !game_over do pause = !pause
+    if !pause && !game_over {
+      if .MOVE_LEFT in actions {
+        shift_piece(&piece, .LEFT, field)
+        move_counter = 0
+        frame_counter = 1
+      }
+      if .MOVE_RIGHT in actions {
+        shift_piece(&piece, .RIGHT, field)
+        move_counter = 0
+        frame_counter = 1
+      }
+      if .MOVE_LEFT not_in actions && .MOVE_LEFT_CONT in actions do if move_counter > FPS / 3 && frame_counter % 6 == 0 do shift_piece(&piece, .LEFT, field)
+      if .MOVE_RIGHT not_in actions && .MOVE_RIGHT_CONT in actions do if move_counter > FPS / 3 && frame_counter % 6 == 0 do shift_piece(&piece, .RIGHT, field)
+      if .SOFT_DROP in actions do fast = true
+      if .ROT_CCW in actions {
+        rotate_piece(&piece, .LEFT, field)
+        frame_counter = 1
+      }
+      if .ROT_CW in actions {
+        rotate_piece(&piece, .RIGHT, field)
+        frame_counter = 1
+      }
+      if .REFLECT_HOR in actions {
+        reflect_piece(&piece, .HOR, field)
+        frame_counter = 1
+      }
+      if .REFLECT_VER in actions {
+        reflect_piece(&piece, .VER, field)
+        frame_counter = 1
+      }
+      if .HARD_DROP in actions {
+        for drop_piece(&piece, field) {}
+        frame_counter = 1
+      }
+      if .POCKET_SWAP in actions {
+        if pocket.color == rl.GRAY {
+          pocket = piece
+          piece = make_piece(&bag)
+        } else {
+          pocket.color, piece.color = piece.color, pocket.color
+          pocket.shape, piece.shape = piece.shape, pocket.shape
+          slice.swap_between(pocket.segments[:], piece.segments[:])
+        }
       }
     }
-    if .PAUSE in actions do pause = !pause
     period := FPS - level * (conf.speed + 1) - gravity
     moving_pieces: if frame_counter % period == 0 || (fast && frame_counter % (period / acceleration) == 0) {
       if fast do acceleration = min(acceleration + 1, 15)
@@ -695,7 +699,7 @@ main :: proc() {
         gravity += 1
       }
     }
-    if game_over {
+    if .RESET in actions && game_over {
       game_over = false
       score = 0
       level = 0
@@ -727,6 +731,13 @@ main :: proc() {
     if conf.particles do render_particles()
     if pause {
       text := fmt.ctprint("PAUSE")
+      font_size := i32(tile_size)
+      l := rl.MeasureText(text, font_size)
+      rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - font_size / 2 - 1, font_size, rl.WHITE)
+      rl.DrawText(text, w / 2 - l / 2, h / 2 - font_size / 2, font_size, rl.BLACK)
+    }
+    if game_over {
+      text := fmt.ctprint("GAME OVER")
       font_size := i32(tile_size)
       l := rl.MeasureText(text, font_size)
       rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - font_size / 2 - 1, font_size, rl.WHITE)
