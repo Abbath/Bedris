@@ -228,21 +228,21 @@ shift_piece :: proc(p: ^Piece, d: DirRot, f: Field) {
 }
 
 min_offset :: proc(p: Piece) -> Point {
-  min := Point{max(int), max(int)}
+  minp := Point{max(int), max(int)}
   for segment in p.segments {
-    if segment.x < min.x do min.x = segment.x
-    if segment.y < min.y do min.y = segment.y
+    minp.x = min(segment.x, minp.x)
+    minp.y = min(segment.y, minp.y)
   }
-  return min
+  return minp
 }
 
 max_offset :: proc(p: Piece) -> Point {
-  max := Point{min(int), min(int)}
+  maxp := Point{min(int), min(int)}
   for segment in p.segments {
-    if segment.x > max.x do max.x = segment.x
-    if segment.y > max.y do max.y = segment.y
+    maxp.x = max(segment.x, maxp.x)
+    maxp.y = max(segment.y, maxp.y)
   }
-  return max
+  return maxp
 }
 
 com_offset :: proc(p: Piece) -> Point {
@@ -260,6 +260,26 @@ check_collision :: proc(p: Piece, f: Field) -> bool {
     if segment.y < 0 do continue
     if segment.x < 0 || segment.x >= f.width || segment.y >= f.height do return true
     if at(f, segment.y, segment.x).filled do return true
+  }
+  return false
+}
+
+find_placement :: proc(p: ^Piece, f: Field) -> bool {
+  for y in ([]int{1, 2, -1, -2}) {
+    for x in ([]int{-1, 1, 2, -2}) {
+      offset_piece(p, {x, y})
+      if !check_collision(p^, f) do return true
+      offset_piece(p, -{x, y})
+    }
+  }
+  if conf.tunnel {
+    for y in ([]int{3, 4, 5, -3, -4, -5}) {
+      for x in ([]int{-3, 3, 4, -4, 5, -5}) {
+        offset_piece(p, {x, y})
+        if !check_collision(p^, f) do return true
+        offset_piece(p, -{x, y})
+      }
+    }
   }
   return false
 }
@@ -289,25 +309,7 @@ rotate_piece :: proc(p: ^Piece, d: DirRot, f: Field) {
   if min_o.x < 0 do offset_piece(p, {-min_o.x, 0})
   if max_o.x >= f.width do offset_piece(p, {f.width - max_o.x - 1, 0})
   if max_o.y >= f.height do offset_piece(p, {0, f.height - max_o.y - 1})
-  if check_collision(p^, f) {
-    for y in ([]int{1, 2, -1, -2}) {
-      for x in ([]int{-1, 1, 2, -2}) {
-        offset_piece(p, {x, y})
-        if !check_collision(p^, f) do return
-        offset_piece(p, -{x, y})
-      }
-    }
-    if conf.tunnel {
-      for y in ([]int{3, 4, 5, -3, -4, -5}) {
-        for x in ([]int{-3, 3, 4, -4, 5, -5}) {
-          offset_piece(p, {x, y})
-          if !check_collision(p^, f) do return
-          offset_piece(p, -{x, y})
-        }
-      }
-    }
-    copy(p.segments[:], old_segments[:])
-  }
+  if check_collision(p^, f) && !find_placement(p, f) do copy(p.segments[:], old_segments[:])
 }
 
 reflect_piece :: proc(p: ^Piece, d: DirRef, f: Field) {
@@ -337,25 +339,7 @@ reflect_piece :: proc(p: ^Piece, d: DirRef, f: Field) {
   if min_o.x < 0 do offset_piece(p, {-min_o.x, 0})
   if max_o.x >= f.width do offset_piece(p, {f.width - max_o.x - 1, 0})
   if max_o.y >= f.height do offset_piece(p, {0, f.height - max_o.y - 1})
-  if check_collision(p^, f) {
-    for y in ([]int{1, 2, -1, -2}) {
-      for x in ([]int{-1, 1, 2, -2}) {
-        offset_piece(p, {x, y})
-        if !check_collision(p^, f) do return
-        offset_piece(p, -{x, y})
-      }
-    }
-    if conf.tunnel {
-      for y in ([]int{3, 4, 5, -3, -4, -5}) {
-        for x in ([]int{-3, 3, 4, -4, 5, -5}) {
-          offset_piece(p, {x, y})
-          if !check_collision(p^, f) do return
-          offset_piece(p, -{x, y})
-        }
-      }
-    }
-    copy(p.segments[:], old_segments[:])
-  }
+  if check_collision(p^, f) && !find_placement(p, f) do copy(p.segments[:], old_segments[:])
 }
 
 Action :: enum {
@@ -478,15 +462,8 @@ get_new_shape :: proc(idx: int) -> (shape: Shape) {
   case .STATS: if len(stats) < SHAPE_NUMBER {
         shape = Shape(rand.int_range(0, SHAPE_NUMBER))
       } else {
-        min_shape: Shape = .WEIRD
         min_freq := max(int)
-        for k, v in stats {
-          if v < min_freq {
-            min_freq = v
-            min_shape = k
-          }
-        }
-        shape = min_shape
+        for k, v in stats do if v < min_freq do shape, min_freq = k, v
       }
   }
   stats[shape] += 1
@@ -570,6 +547,16 @@ conf: Config
 
 tile_size := 40
 stats: map[Shape]int
+
+render_banner :: proc(txt: string) {
+  w := rl.GetScreenWidth()
+  h := rl.GetScreenHeight()
+  text := fmt.ctprint(txt)
+  font_size := i32(tile_size)
+  l := rl.MeasureText(text, font_size)
+  rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - font_size / 2 - 1, font_size, rl.WHITE)
+  rl.DrawText(text, w / 2 - l / 2, h / 2 - font_size / 2, font_size, rl.BLACK)
+}
 
 main :: proc() {
   when ODIN_DEBUG {
@@ -729,20 +716,8 @@ main :: proc() {
     render_queue(piece_queue, field)
     render_pocket(pocket, field)
     if conf.particles do render_particles()
-    if pause {
-      text := fmt.ctprint("PAUSE")
-      font_size := i32(tile_size)
-      l := rl.MeasureText(text, font_size)
-      rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - font_size / 2 - 1, font_size, rl.WHITE)
-      rl.DrawText(text, w / 2 - l / 2, h / 2 - font_size / 2, font_size, rl.BLACK)
-    }
-    if game_over {
-      text := fmt.ctprint("GAME OVER")
-      font_size := i32(tile_size)
-      l := rl.MeasureText(text, font_size)
-      rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - font_size / 2 - 1, font_size, rl.WHITE)
-      rl.DrawText(text, w / 2 - l / 2, h / 2 - font_size / 2, font_size, rl.BLACK)
-    }
+    if pause do render_banner("PAUSE")
+    if game_over do render_banner("GAME OVER")
     rl.EndMode2D()
     rl.EndDrawing()
   }
