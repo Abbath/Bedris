@@ -265,23 +265,19 @@ check_collision :: proc(p: Piece, f: Field) -> bool {
 }
 
 find_placement :: proc(p: ^Piece, f: Field) -> bool {
-  for y in ([]int{1, 2, -1, -2}) {
-    for x in ([]int{-1, 1, 2, -2}) {
-      offset_piece(p, {x, y})
-      if !check_collision(p^, f) do return true
-      offset_piece(p, -{x, y})
-    }
-  }
-  if conf.tunnel {
-    for y in ([]int{3, 4, 5, -3, -4, -5}) {
-      for x in ([]int{-3, 3, 4, -4, 5, -5}) {
+  inner_loops :: proc(p: ^Piece, f: Field, xs: []int, ys: []int) -> bool {
+    for y in ys {
+      for x in xs {
         offset_piece(p, {x, y})
         if !check_collision(p^, f) do return true
         offset_piece(p, -{x, y})
       }
     }
+    return false
   }
-  return false
+  normal_cheks := inner_loops(p, f, []int{-1, 1, 2, -2}, []int{1, 2, -1, -2})
+  tunnel_checks := false if !conf.tunnel else inner_loops(p, f, []int{-3, 3, 4, -4, 5, -5}, []int{3, 4, 5, -3, -4, -5})
+  return normal_cheks || tunnel_checks
 }
 
 rotate_piece :: proc(p: ^Piece, d: DirRot, f: Field) {
