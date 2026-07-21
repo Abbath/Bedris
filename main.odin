@@ -353,6 +353,7 @@ Action :: enum {
   REFLECT_HOR,
   REFLECT_VER,
   RESET,
+  EXTEND,
 }
 ActionSet :: bit_set[Action]
 
@@ -368,6 +369,7 @@ handle_input :: proc(p: ^Piece, f: Field) -> (res: ActionSet) {
   if rl.IsKeyPressed(.P) do res |= {.PAUSE}
   if rl.IsKeyPressed(.R) do res |= {.REFLECT_VER} if rl.IsKeyDown(.LEFT_SHIFT) else {.REFLECT_HOR}
   if rl.IsKeyPressed(.F10) do res |= {.RESET}
+  if rl.IsKeyPressed(.E) do res |= {.EXTEND}
   return
 }
 
@@ -540,6 +542,7 @@ Config :: struct {
   bag_size:     int `usage:"Bag size"`,
   randomizer:   Randomizer `usage:"Randomizer type"`,
   hard_drop:    bool `usage:"Hard drop"`,
+  extend:       bool `usage:"Extension"`,
 }
 conf: Config
 
@@ -566,6 +569,23 @@ new_piece :: proc(p: ^Piece, pc: ^int, qs: int, b: ^Bag, pq: ^[dynamic]Piece, l:
   if pc^ % 10 == 0 {
     l^ += 1
     if conf.garbage do generate_garbage(f)
+  }
+}
+
+extend_piece :: proc(p: ^Piece) {
+  i := rand.int_range(0, len(p.segments))
+  s := p.segments[i]
+  extensions := []Point{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}
+  outer: for {
+    if len(p.segments) == 5 do return
+    new_s := s + rand.choice(extensions)
+    for ss in p.segments {
+      if new_s == ss {
+        continue outer
+      }
+    }
+    append(&p.segments, new_s)
+    return
   }
 }
 
@@ -675,6 +695,9 @@ main :: proc() {
           pocket.shape, piece.shape = piece.shape, pocket.shape
           slice.swap_between(pocket.segments[:], piece.segments[:])
         }
+      }
+      if .EXTEND in actions {
+        if conf.extend do extend_piece(&piece)
       }
     }
     period := FPS - level * (conf.speed + 1) - gravity
