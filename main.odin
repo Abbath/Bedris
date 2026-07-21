@@ -347,6 +347,7 @@ Action :: enum {
   ROT_CW,
   ROT_CCW,
   HARD_DROP,
+  SONIC_DROP,
   POCKET_SWAP,
   PAUSE,
   REFLECT_HOR,
@@ -361,7 +362,7 @@ handle_input :: proc(p: ^Piece, f: Field) -> (res: ActionSet) {
   if rl.IsKeyDown(.A) || rl.IsKeyDown(.LEFT) do res |= {.MOVE_LEFT_CONT}
   if rl.IsKeyDown(.D) || rl.IsKeyDown(.RIGHT) do res |= {.MOVE_RIGHT_CONT}
   if rl.IsKeyDown(.S) || rl.IsKeyDown(.DOWN) do res |= {.SOFT_DROP}
-  if rl.IsKeyPressed(.SPACE) do res |= {.HARD_DROP}
+  if rl.IsKeyPressed(.SPACE) do res |= {.HARD_DROP} if conf.hard_drop else {.SONIC_DROP}
   if rl.IsKeyPressed(.W) || rl.IsKeyPressed(.UP) do res |= {.ROT_CCW} if rl.IsKeyDown(.LEFT_SHIFT) else {.ROT_CW}
   if rl.IsKeyPressed(.Q) do res |= {.POCKET_SWAP}
   if rl.IsKeyPressed(.P) do res |= {.PAUSE}
@@ -538,6 +539,7 @@ Config :: struct {
   palette:      string `usage:"Some palette"`,
   bag_size:     int `usage:"Bag size"`,
   randomizer:   Randomizer `usage:"Randomizer type"`,
+  hard_drop:    bool `usage:"Hard drop"`,
 }
 conf: Config
 
@@ -552,6 +554,19 @@ render_banner :: proc(txt: string) {
   l := rl.MeasureText(text, font_size)
   rl.DrawText(text, w / 2 - l / 2 - 1, h / 2 - font_size / 2 - 1, font_size, rl.WHITE)
   rl.DrawText(text, w / 2 - l / 2, h / 2 - font_size / 2, font_size, rl.BLACK)
+}
+
+new_piece :: proc(p: ^Piece, pc: ^int, qs: int, b: ^Bag, pq: ^[dynamic]Piece, l: ^int, f: ^Field) {
+  p^ = make_piece(b)
+  pc^ += 1
+  for i in 0 ..< qs {
+    pq[i].shape = get_queue_shape(b^, i)
+    copy(pq[i].segments[:], traditional_shapes[pq[i].shape][:])
+  }
+  if pc^ % 10 == 0 {
+    l^ += 1
+    if conf.garbage do generate_garbage(f)
+  }
 }
 
 main :: proc() {
@@ -643,6 +658,12 @@ main :: proc() {
       }
       if .HARD_DROP in actions {
         for drop_piece(&piece, field) {}
+        cement_piece(&field, piece)
+        new_piece(&piece, &piece_counter, queue_size, &bag, &piece_queue, &level, &field)
+        frame_counter = 1
+      }
+      if .SONIC_DROP in actions {
+        for drop_piece(&piece, field) {}
         frame_counter = 1
       }
       if .POCKET_SWAP in actions {
@@ -668,16 +689,7 @@ main :: proc() {
           break moving_pieces
         }
         cement_piece(&field, piece)
-        piece = make_piece(&bag)
-        piece_counter += 1
-        for i in 0 ..< queue_size {
-          piece_queue[i].shape = get_queue_shape(bag, i)
-          copy(piece_queue[i].segments[:], traditional_shapes[piece_queue[i].shape][:])
-        }
-        if piece_counter % 10 == 0 {
-          level += 1
-          if conf.garbage do generate_garbage(&field)
-        }
+        new_piece(&piece, &piece_counter, queue_size, &bag, &piece_queue, &level, &field)
       } else {
         gravity += 1
       }
