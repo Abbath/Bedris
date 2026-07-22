@@ -691,9 +691,7 @@ main :: proc() {
           pocket = piece
           piece = make_piece(&bag)
         } else {
-          pocket.color, piece.color = piece.color, pocket.color
-          pocket.shape, piece.shape = piece.shape, pocket.shape
-          slice.swap_between(pocket.segments[:], piece.segments[:])
+          pocket, piece = piece, pocket
         }
       }
       if .EXTEND in actions {
