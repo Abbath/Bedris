@@ -485,7 +485,7 @@ get_queue_shape :: proc(b: Bag, i: int) -> Shape {
 
 generate_garbage :: proc(f: ^Field) {
   copy(f.data[:len(f.data) - f.width], f.data[f.width:])
-  for i in 0 ..< f.width do at(f, FIELD_HEIGHT - 1, i)^ = Tile{true, rl.BROWN} if rand.uint64() % 2 == 0 else Tile{}
+  for i in 0 ..< f.width do at(f, FIELD_HEIGHT - 1, i)^ = Tile{true, rl.BROWN} if rand.float64() < conf.density else Tile{}
 }
 
 Particle :: struct {
@@ -512,7 +512,7 @@ process_particles :: proc() {
   h := rl.GetScreenHeight()
   for &p in particles {
     if p.alive {
-      if p.pos.y > auto_cast h {
+      if p.pos.y - auto_cast tile_size > auto_cast h {
         p.alive = false
         continue
       }
@@ -523,7 +523,7 @@ process_particles :: proc() {
 }
 
 render_particles :: proc() {
-  for p in particles {
+  for p in particles do if p.alive {
     rect := rl.Rectangle{p.pos.x - f32(tile_size / 2), p.pos.y - f32(tile_size / 2), auto_cast tile_size, auto_cast tile_size}
     rl.DrawRectangleRec(rect, p.color)
   }
@@ -543,6 +543,7 @@ Config :: struct {
   randomizer:   Randomizer `usage:"Randomizer type"`,
   hard_drop:    bool `usage:"Hard drop"`,
   extend:       bool `usage:"Extension"`,
+  density:      f64 `usage:"Garbage density"`,
 }
 conf: Config
 
@@ -595,6 +596,7 @@ main :: proc() {
     defer debug_stuff_defer()
   }
   flags.parse_or_exit(&conf, os.args[:])
+  if conf.density == 0 do conf.density = 0.5
   stats = make(map[Shape]int)
   defer delete(stats)
   rl.SetTargetFPS(FPS)
