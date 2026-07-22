@@ -1,4 +1,4 @@
-#+feature dynamic-literals
+#+feature dynamic-literals using-stmt
 package main
 
 import "core:flags"
@@ -497,28 +497,24 @@ Particle :: struct {
 particles: [1024]Particle
 
 spawn_particle :: proc(p: rl.Vector2, c: rl.Color) {
-  for &particle in particles {
-    if !particle.alive {
-      particle.alive = true
-      particle.pos = p
-      particle.vel = {rand.float32_range(-10, 10), -20}
-      particle.color = c
-      break
-    }
+  for &particle in particles do if !particle.alive {
+    particle.alive = true
+    particle.pos = p
+    particle.vel = {rand.float32_range(-10, 10), -20}
+    particle.color = c
+    break
   }
 }
 
 process_particles :: proc() {
   h := rl.GetScreenHeight()
-  for &p in particles {
-    if p.alive {
-      if p.pos.y - auto_cast tile_size > auto_cast h {
-        p.alive = false
-        continue
-      }
-      p.pos += p.vel
-      p.vel += {0, 1}
+  for &p in particles do if p.alive {
+    if p.pos.y - auto_cast tile_size > auto_cast h {
+      p.alive = false
+      continue
     }
+    p.pos += p.vel
+    p.vel += {0, 1}
   }
 }
 
@@ -560,16 +556,17 @@ render_banner :: proc(txt: string) {
   rl.DrawText(text, w / 2 - l / 2, h / 2 - font_size / 2, font_size, rl.BLACK)
 }
 
-new_piece :: proc(p: ^Piece, pc: ^int, qs: int, b: ^Bag, pq: ^[dynamic]Piece, l: ^int, f: ^Field) {
-  p^ = make_piece(b)
-  pc^ += 1
-  for i in 0 ..< qs {
-    pq[i].shape = get_queue_shape(b^, i)
-    copy(pq[i].segments[:], traditional_shapes[pq[i].shape][:])
+new_piece :: proc(g: ^Game) {
+  using g
+  piece = make_piece(&bag)
+  piece_counter += 1
+  for &pp, i in piece_queue {
+    pp.shape = get_queue_shape(bag, i)
+    copy(pp.segments[:], traditional_shapes[pp.shape][:])
   }
-  if pc^ % 10 == 0 {
-    l^ += 1
-    if conf.garbage do generate_garbage(f)
+  if piece_counter % 10 == 0 {
+    level += 1
+    if conf.garbage do generate_garbage(&field)
   }
 }
 
@@ -590,6 +587,15 @@ extend_piece :: proc(p: ^Piece) {
   }
 }
 
+Game :: struct {
+  piece:         Piece,
+  piece_counter: int,
+  bag:           Bag,
+  piece_queue:   [dynamic]Piece,
+  level:         int,
+  field:         Field,
+}
+
 main :: proc() {
   when ODIN_DEBUG {
     context.allocator = debug_stuff_init()
@@ -603,11 +609,13 @@ main :: proc() {
   rl.SetConfigFlags({.WINDOW_RESIZABLE})
   rl.InitWindow(600, 800, "BEDRIS")
   defer rl.CloseWindow()
-  bag := init_bag(max(SHAPE_NUMBER, conf.bag_size == 0 ? SHAPE_NUMBER : conf.bag_size))
+  game: Game
+  using game
+  bag = init_bag(max(SHAPE_NUMBER, conf.bag_size == 0 ? SHAPE_NUMBER : conf.bag_size))
   defer delete_bag(bag)
-  field := make_field(FIELD_WIDTH, FIELD_HEIGHT)
+  field = make_field(FIELD_WIDTH, FIELD_HEIGHT)
   defer delete_field(field)
-  piece := make_piece(&bag)
+  piece = make_piece(&bag)
   defer delete(piece.segments)
   preview_piece := copy_piece(piece)
   frame_counter := 1
@@ -615,19 +623,19 @@ main :: proc() {
   acceleration := 2
   score := 0
   queue_size := max(1, min(6, conf.queue == 0 ? 3 : conf.queue))
-  piece_queue := make([dynamic]Piece, queue_size)
+  piece_queue = make([dynamic]Piece, queue_size)
   defer delete(piece_queue)
   pocket := Piece{.SQUARE, rl.GRAY, {}}
   defer delete(pocket.segments)
-  for i in 0 ..< queue_size {
-    piece_queue[i].shape = get_queue_shape(bag, i)
-    piece_queue[i].color = rl.RAYWHITE
-    piece_queue[i].segments = make([dynamic]Point, 4)
-    copy(piece_queue[i].segments[:], traditional_shapes[piece_queue[i].shape][:])
+  for &p, i in piece_queue {
+    p.shape = get_queue_shape(bag, i)
+    p.color = rl.RAYWHITE
+    p.segments = make([dynamic]Point, 4)
+    copy(p.segments[:], traditional_shapes[p.shape][:])
   }
   defer for i in 0 ..< queue_size do delete(piece_queue[i].segments)
-  level := 0
-  piece_counter := 0
+  level = 0
+  piece_counter = 0
   pause := false
   move_counter := 0
   gravity := 0
@@ -681,7 +689,7 @@ main :: proc() {
       if .HARD_DROP in actions {
         for drop_piece(&piece, field) {}
         cement_piece(&field, piece)
-        new_piece(&piece, &piece_counter, queue_size, &bag, &piece_queue, &level, &field)
+        new_piece(&game)
         frame_counter = 1
       }
       if .SONIC_DROP in actions {
@@ -696,9 +704,7 @@ main :: proc() {
           pocket, piece = piece, pocket
         }
       }
-      if .EXTEND in actions {
-        if conf.extend do extend_piece(&piece)
-      }
+      if .EXTEND in actions && conf.extend do extend_piece(&piece)
     }
     period := FPS - level * (conf.speed + 1) - gravity
     moving_pieces: if frame_counter % period == 0 || (fast && frame_counter % (period / acceleration) == 0) {
@@ -712,7 +718,7 @@ main :: proc() {
           break moving_pieces
         }
         cement_piece(&field, piece)
-        new_piece(&piece, &piece_counter, queue_size, &bag, &piece_queue, &level, &field)
+        new_piece(&game)
       } else {
         gravity += 1
       }
